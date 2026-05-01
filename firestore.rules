@@ -14,6 +14,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /platformConfig/{configId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    function isSuperAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/schoolAdmins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/schoolAdmins/$(request.auth.uid)).data.superAdmin == true;
+    }
+
     function isSchoolAdmin(schoolId) {
       return request.auth != null
         && (
@@ -71,6 +82,7 @@ service cloud.firestore {
           "staff",
           "classes",
           "students",
+          "subjects",
           "aboutCategories",
           "aboutPages",
           "updatedAt",

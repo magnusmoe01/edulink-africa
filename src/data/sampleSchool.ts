@@ -14,6 +14,8 @@ export const sampleSchool: School = {
   principal: "Amina Okoth",
   heroImage:
     "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=1600&q=80",
+  mainColor: "#18322e",
+  subColor: "#e0b44f",
   about:
     "Our school combines strong classroom teaching, practical digital skills, arts, sport, and a culture of care. Families can use this page to follow school news, find contact information, and stay close to daily school life.",
   values: ["Learning with purpose", "Care and inclusion", "Community service"],

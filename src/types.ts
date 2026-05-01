@@ -1,6 +1,9 @@
 export type NewsItem = {
+  id?: string;
   title: string;
+  slug?: string;
   date: string;
+  headerImage?: string;
   body: string;
 };
 
@@ -15,6 +18,9 @@ export type StaffMember = {
   category?: "Teacher" | "Administration" | "Other";
   phone?: string;
   email?: string;
+  photoUrl?: string;
+  visibleOnHomePage?: boolean;
+  visibleOnStaffPage?: boolean;
 };
 
 export type ClassGroup = {
@@ -29,8 +35,28 @@ export type Student = {
   firstName: string;
   lastName: string;
   classId: string;
+  dateOfBirth?: string;
+  gender?: string;
+  description?: string;
+  guardians?: Guardian[];
   guardianName?: string;
   guardianEmail?: string;
+};
+
+export type Guardian = {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  relationship?: string;
+};
+
+export type Subject = {
+  id: string;
+  name: string;
+  teacherName: string;
+  classIds: string[];
+  studentIds: string[];
 };
 
 export type AboutCategory = {
@@ -61,6 +87,8 @@ export type School = {
   principal: string;
   heroImage: string;
   logoUrl?: string;
+  mainColor?: string;
+  subColor?: string;
   about: string;
   values: string[];
   announcements: NewsItem[];
@@ -68,8 +96,19 @@ export type School = {
   staff: StaffMember[];
   classes: ClassGroup[];
   students: Student[];
+  subjects: Subject[];
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
+  updatedAt?: string;
+};
+
+export type GlobalAboutPage = AboutPage & {
+  kind?: "richText" | "staffDirectory";
+};
+
+export type GlobalAboutConfig = {
+  categories: AboutCategory[];
+  pages: GlobalAboutPage[];
   updatedAt?: string;
 };
 
