@@ -1,0 +1,81 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /schools/{schoolId} {
+      allow read: if true;
+      allow create: if isSchoolAdmin(schoolId) || isValidPublicSchoolCreate(schoolId);
+      allow update: if isSchoolAdmin(schoolId);
+      allow delete: if isSchoolAdmin(schoolId);
+    }
+
+    match /schoolAdmins/{adminId} {
+      allow read: if request.auth != null && request.auth.uid == adminId;
+      allow write: if false;
+    }
+
+    function isSchoolAdmin(schoolId) {
+      return request.auth != null
+        && (
+          isProfileSchoolAdmin(schoolId)
+          || isRegisteredSchoolEmail(schoolId)
+        );
+    }
+
+    function isProfileSchoolAdmin(schoolId) {
+      return exists(/databases/$(database)/documents/schoolAdmins/$(request.auth.uid))
+        && (
+          get(/databases/$(database)/documents/schoolAdmins/$(request.auth.uid)).data.superAdmin == true
+          || schoolId in get(/databases/$(database)/documents/schoolAdmins/$(request.auth.uid)).data.schoolIds
+        );
+    }
+
+    function isRegisteredSchoolEmail(schoolId) {
+      return exists(/databases/$(database)/documents/schools/$(schoolId))
+        && request.auth.token.email in get(/databases/$(database)/documents/schools/$(schoolId)).data.adminEmails;
+    }
+
+    function isValidPublicSchoolCreate(schoolId) {
+      return !exists(/databases/$(database)/documents/schools/$(schoolId))
+        && request.resource.data.id == schoolId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.city is string
+        && request.resource.data.city.size() <= 80
+        && request.resource.data.country is string
+        && request.resource.data.country.size() <= 80
+        && request.resource.data.email is string
+        && request.resource.data.adminEmails is list
+        && request.resource.data.adminEmails.size() == 1
+        && request.resource.data.adminEmails[0] is string
+        && request.resource.data.adminEmails[0].matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+        && request.resource.data.keys().hasOnly([
+          "id",
+          "name",
+          "type",
+          "tagline",
+          "country",
+          "city",
+          "address",
+          "phone",
+          "email",
+          "adminEmails",
+          "principal",
+          "heroImage",
+          "logoUrl",
+          "about",
+          "values",
+          "announcements",
+          "calendar",
+          "staff",
+          "classes",
+          "students",
+          "aboutCategories",
+          "aboutPages",
+          "updatedAt",
+          "serverUpdatedAt"
+        ]);
+    }
+  }
+}
