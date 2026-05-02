@@ -151,6 +151,7 @@ function normalizeSchool(school: School): School {
   return {
     ...sampleSchool,
     ...school,
+    showWebsite: school.showWebsite ?? true,
     adminEmails: school.adminEmails ?? [],
     values: school.values ?? [],
     announcements: school.announcements ?? [],
@@ -171,7 +172,27 @@ function normalizeSchool(school: School): School {
         relationship: "",
       }] : []),
     })),
-    subjects: school.subjects ?? [],
+    subjects: (school.subjects ?? []).map((subject) => ({
+      id: subject.id,
+      name: subject.name,
+      abbreviation: subject.abbreviation ?? subject.name.slice(0, 4).toUpperCase(),
+      color: subject.color ?? "#1f6857",
+    })),
+    subjectClasses: (school.subjectClasses ?? (school.subjects ?? []).flatMap((subject) => {
+      const legacyClassIds = subject.classIds ?? [];
+      return legacyClassIds.map((classId) => ({
+        id: `subject-class-${subject.id}-${classId}`,
+        name: `${subject.name} ${school.classes?.find((classGroup) => classGroup.id === classId)?.name ?? ""}`.trim(),
+        subjectId: subject.id,
+        baseClassId: classId,
+        teacherName: subject.teacherName ?? "",
+        studentIds: subject.studentIds ?? [],
+      }));
+    })).map((subjectClass) => ({
+      ...subjectClass,
+      courseMaterials: subjectClass.courseMaterials ?? [],
+      assignments: subjectClass.assignments ?? [],
+    })),
     aboutCategories: school.aboutCategories ?? [],
     aboutPages: school.aboutPages ?? [],
   };

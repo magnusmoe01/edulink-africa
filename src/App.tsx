@@ -38,9 +38,49 @@ import {
 } from "./lib/schools";
 import { hasFirebaseConfig } from "./lib/firebase";
 import { auth } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, Guardian, NewsItem, School, StaffMember, Student, Subject } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, Guardian, NewsItem, School, StaffMember, Student, Subject, SubjectClass } from "./types";
 
-type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "classes" | "subjects" | "students";
+type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "classes" | "subjects" | "students" | "schoolWork";
+type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork";
+
+const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
+const MAX_IMAGE_UPLOAD_LABEL = "1MB";
+const MAX_MATERIAL_UPLOAD_BYTES = 1024 * 1024;
+const MAX_MATERIAL_UPLOAD_LABEL = "1MB";
+const schoolCache = new Map<string, School>();
+let globalAboutCache: GlobalAboutConfig | null = null;
+const subjectColorOptions = [
+  "#1f6857",
+  "#2f6fbb",
+  "#8f4bb8",
+  "#c65353",
+  "#c5872f",
+  "#5d6b7a",
+  "#0f766e",
+  "#2563eb",
+  "#7c3aed",
+  "#db2777",
+  "#dc2626",
+  "#ea580c",
+  "#ca8a04",
+  "#65a30d",
+  "#16a34a",
+  "#059669",
+  "#0891b2",
+  "#0284c7",
+  "#4f46e5",
+  "#9333ea",
+  "#c026d3",
+  "#e11d48",
+  "#be123c",
+  "#92400e",
+  "#854d0e",
+  "#3f6212",
+  "#166534",
+  "#115e59",
+  "#1e40af",
+  "#334155",
+];
 
 const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "profile", label: "School profile" },
@@ -52,6 +92,39 @@ const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "classes", label: "Classes" },
   { id: "subjects", label: "Subjects" },
   { id: "students", label: "Students" },
+  { id: "schoolWork", label: "Subject class pages" },
+];
+
+const editorCategories: Array<{
+  id: EditorCategory;
+  label: string;
+  description: string;
+  sections: EditorSection[];
+}> = [
+  {
+    id: "schoolPage",
+    label: "School page",
+    description: "Public website content, contact details, pages, news, and calendar.",
+    sections: ["profile", "contact", "about", "news", "calendar"],
+  },
+  {
+    id: "people",
+    label: "People",
+    description: "Staff members, students, guardians, and learner records.",
+    sections: ["staff", "students"],
+  },
+  {
+    id: "academics",
+    label: "Academics",
+    description: "Main classes, subject classes, and subject catalog.",
+    sections: ["classes", "subjects"],
+  },
+  {
+    id: "schoolWork",
+    label: "School work",
+    description: "Course materials and assignments for subject classes.",
+    sections: ["schoolWork"],
+  },
 ];
 
 type Route =
@@ -186,9 +259,11 @@ function LandingPage() {
       country: country || sampleSchool.country,
       email: `office@${slug}.example`,
       adminEmails: [normalizedEmail],
+      showWebsite: true,
       classes: [],
       students: [],
       subjects: [],
+      subjectClasses: [],
       aboutCategories: [],
       aboutPages: [],
       updatedAt: new Date().toISOString(),
@@ -414,32 +489,44 @@ async function redirectSignedInUser(user: User, setStatus: (status: string) => v
 }
 
 function SchoolPage({ schoolId }: { schoolId: string }) {
-  const [school, setSchool] = useState<School | null>(() => getLocalSchool(schoolId) ?? null);
+  const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
 
   useEffect(() => {
-    void getSchool(schoolId).then((remoteSchool) => setSchool(getLocalSchool(schoolId) ?? remoteSchool));
+    void loadSchoolForPublicPage(schoolId, setSchool);
   }, [schoolId]);
 
   if (!school) {
     return <LoadingScreen />;
+  }
+  if (!shouldShowPublicSchoolWebsite(school)) {
+    return <SchoolWebsiteHiddenRedirect />;
   }
 
   return <SchoolTemplate school={school} currentPage="home" />;
 }
 
 function AboutPageView({ schoolId }: { schoolId: string }) {
-  const [school, setSchool] = useState<School | null>(() => getLocalSchool(schoolId) ?? null);
-  const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig | null>(null);
+  const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
+  const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig | null>(() => globalAboutCache);
 
   useEffect(() => {
     void Promise.all([getSchool(schoolId), getGlobalAboutConfig()]).then(([remoteSchool, nextGlobalAbout]) => {
-      setSchool(getLocalSchool(schoolId) ?? remoteSchool);
+      const nextSchool = getLocalSchool(schoolId) ?? remoteSchool;
+      schoolCache.set(schoolId, nextSchool);
+      globalAboutCache = nextGlobalAbout;
+      setSchool(nextSchool);
       setGlobalAbout(nextGlobalAbout);
     });
   }, [schoolId]);
 
-  if (!school || !globalAbout) {
+  if (!school) {
     return <LoadingScreen />;
+  }
+  if (!shouldShowPublicSchoolWebsite(school)) {
+    return <SchoolWebsiteHiddenRedirect />;
+  }
+  if (!globalAbout) {
+    return <SchoolLoadingPage school={school} currentPage="about" />;
   }
 
   const aboutPageGroups = buildAboutPageGroups(school, globalAbout);
@@ -481,18 +568,27 @@ function AboutPageView({ schoolId }: { schoolId: string }) {
 }
 
 function AboutSinglePageView({ schoolId, pageSlug }: { schoolId: string; pageSlug: string }) {
-  const [school, setSchool] = useState<School | null>(() => getLocalSchool(schoolId) ?? null);
-  const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig | null>(null);
+  const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
+  const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig | null>(() => globalAboutCache);
 
   useEffect(() => {
     void Promise.all([getSchool(schoolId), getGlobalAboutConfig()]).then(([remoteSchool, nextGlobalAbout]) => {
-      setSchool(getLocalSchool(schoolId) ?? remoteSchool);
+      const nextSchool = getLocalSchool(schoolId) ?? remoteSchool;
+      schoolCache.set(schoolId, nextSchool);
+      globalAboutCache = nextGlobalAbout;
+      setSchool(nextSchool);
       setGlobalAbout(nextGlobalAbout);
     });
   }, [schoolId]);
 
-  if (!school || !globalAbout) {
+  if (!school) {
     return <LoadingScreen />;
+  }
+  if (!shouldShowPublicSchoolWebsite(school)) {
+    return <SchoolWebsiteHiddenRedirect />;
+  }
+  if (!globalAbout) {
+    return <SchoolLoadingPage school={school} currentPage="about" />;
   }
 
   const globalPage = globalAbout.pages.find((item) => item.slug === pageSlug);
@@ -589,14 +685,17 @@ function AboutSinglePageView({ schoolId, pageSlug }: { schoolId: string; pageSlu
 }
 
 function StudentsGuardiansPage({ schoolId }: { schoolId: string }) {
-  const [school, setSchool] = useState<School | null>(() => getLocalSchool(schoolId) ?? null);
+  const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
 
   useEffect(() => {
-    void getSchool(schoolId).then((remoteSchool) => setSchool(getLocalSchool(schoolId) ?? remoteSchool));
+    void loadSchoolForPublicPage(schoolId, setSchool);
   }, [schoolId]);
 
   if (!school) {
     return <LoadingScreen />;
+  }
+  if (!shouldShowPublicSchoolWebsite(school)) {
+    return <SchoolWebsiteHiddenRedirect />;
   }
 
   return (
@@ -645,14 +744,17 @@ function StudentsGuardiansPage({ schoolId }: { schoolId: string }) {
 }
 
 function NewsPage({ schoolId }: { schoolId: string }) {
-  const [school, setSchool] = useState<School | null>(() => getLocalSchool(schoolId) ?? null);
+  const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
 
   useEffect(() => {
-    void getSchool(schoolId).then((remoteSchool) => setSchool(getLocalSchool(schoolId) ?? remoteSchool));
+    void loadSchoolForPublicPage(schoolId, setSchool);
   }, [schoolId]);
 
   if (!school) {
     return <LoadingScreen />;
+  }
+  if (!shouldShowPublicSchoolWebsite(school)) {
+    return <SchoolWebsiteHiddenRedirect />;
   }
 
   const news = [...school.announcements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -692,14 +794,17 @@ function NewsPage({ schoolId }: { schoolId: string }) {
 }
 
 function NewsSinglePage({ schoolId, newsSlug }: { schoolId: string; newsSlug: string }) {
-  const [school, setSchool] = useState<School | null>(() => getLocalSchool(schoolId) ?? null);
+  const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
 
   useEffect(() => {
-    void getSchool(schoolId).then((remoteSchool) => setSchool(getLocalSchool(schoolId) ?? remoteSchool));
+    void loadSchoolForPublicPage(schoolId, setSchool);
   }, [schoolId]);
 
   if (!school) {
     return <LoadingScreen />;
+  }
+  if (!shouldShowPublicSchoolWebsite(school)) {
+    return <SchoolWebsiteHiddenRedirect />;
   }
 
   const newsItem = school.announcements.find((item) => getNewsSlug(item) === newsSlug);
@@ -833,7 +938,8 @@ function SchoolTemplate({ school, currentPage }: { school: School; currentPage?:
 
 function AdminPage({ schoolId }: { schoolId: string }) {
   const [school, setSchool] = useState<School>(() => getLocalSchool(schoolId) ?? { ...sampleSchool, id: schoolId });
-  const [activeSection, setActiveSection] = useState<EditorSection>("profile");
+  const [activeCategory, setActiveCategory] = useState<EditorCategory>(() => getEditorStateFromHash().category);
+  const [activeSection, setActiveSection] = useState<EditorSection | null>(() => getEditorStateFromHash().section);
   const [adminUser, setAdminUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
@@ -845,6 +951,16 @@ function AdminPage({ schoolId }: { schoolId: string }) {
       setGlobalAbout(nextGlobalAbout);
     });
   }, [schoolId]);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const nextState = getEditorStateFromHash();
+      setActiveCategory(nextState.category);
+      setActiveSection(nextState.section);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   useEffect(() => {
     if (!hasFirebaseConfig || !auth) {
@@ -863,12 +979,23 @@ function AdminPage({ schoolId }: { schoolId: string }) {
   }, [schoolId]);
 
   const submit = async () => {
-    if (hasFirebaseConfig && (!adminUser || !canManageSchool(profile, school.id, adminUser.email, school))) {
+    if (hasFirebaseConfig && (!adminUser || (!canManageSchool(profile, school.id, adminUser.email, school) && !canTeachAnySubjectClass(school, adminUser.email)))) {
       setSaveStatus("Sign in to save changes");
       return;
     }
     setSaveStatus("Saving...");
     await saveSchool(school);
+    setSaveStatus("Saved!");
+    setTimeout(() => setSaveStatus(null), 2000);
+  };
+  const saveNextSchool = async (nextSchool: School) => {
+    if (hasFirebaseConfig && (!adminUser || (!canManageSchool(profile, nextSchool.id, adminUser.email, nextSchool) && !canTeachAnySubjectClass(nextSchool, adminUser.email)))) {
+      setSaveStatus("Sign in to save changes");
+      return;
+    }
+    setSchool(nextSchool);
+    setSaveStatus("Saving...");
+    await saveSchool(nextSchool);
     setSaveStatus("Saved!");
     setTimeout(() => setSaveStatus(null), 2000);
   };
@@ -878,6 +1005,17 @@ function AdminPage({ schoolId }: { schoolId: string }) {
       return;
     }
     await signOut(auth);
+  };
+  const openEditorCategory = (category: EditorCategory) => {
+    setActiveCategory(category);
+    setActiveSection(null);
+    setEditorHash(category);
+  };
+  const openEditorSection = (section: EditorSection) => {
+    const category = getEditorCategoryForSection(section);
+    setActiveCategory(category);
+    setActiveSection(section);
+    setEditorHash(category, section);
   };
 
   return (
@@ -901,10 +1039,7 @@ function AdminPage({ schoolId }: { schoolId: string }) {
               Sign out
             </button>
           ) : null}
-          <button className="primary-action" onClick={() => void submit()}>
-            <Save size={18} />
-            {saveStatus ?? "Save"}
-          </button>
+          {saveStatus ? <span className="admin-save-status">{saveStatus}</span> : null}
         </div>
       </header>
 
@@ -922,7 +1057,7 @@ function AdminPage({ schoolId }: { schoolId: string }) {
               </button>
             ) : null}
           </div>
-          <EditorMenu activeSection={activeSection} onChange={setActiveSection} />
+          <EditorMenu activeCategory={activeCategory} activeSection={activeSection} onChange={openEditorCategory} />
         </aside>
 
         <SchoolEditor
@@ -930,8 +1065,13 @@ function AdminPage({ schoolId }: { schoolId: string }) {
           globalAbout={globalAbout}
           onChange={setSchool}
           onSubmit={submit}
+          onAutoSave={saveNextSchool}
+          activeCategory={activeCategory}
           activeSection={activeSection}
-          onSectionChange={setActiveSection}
+          currentUserEmail={adminUser?.email ?? null}
+          canAccessAllSubjectClasses={canManageSchool(profile, school.id, adminUser?.email, school)}
+          onBack={() => setActiveSection(null)}
+          onSectionChange={openEditorSection}
         />
       </section>
     </main>
@@ -993,9 +1133,11 @@ function SuperAdminPage() {
       name: newSchoolName,
       email: `office@${id}.example`,
       adminEmails: [],
+      showWebsite: true,
       classes: [],
       students: [],
       subjects: [],
+      subjectClasses: [],
       aboutCategories: [],
       aboutPages: [],
       updatedAt: new Date().toISOString(),
@@ -1279,7 +1421,7 @@ function GlobalAboutEditor({
                   />
                   {item.kind === "staffDirectory" ? null : (
                     <>
-                      <TextInput label="Header image URL" value={item.headerImage ?? ""} onChange={(value) => update({ ...item, headerImage: value })} />
+                      <ImageUpload label="Header image" value={item.headerImage ?? ""} onChange={(headerImage) => update({ ...item, headerImage })} />
                       <RichTextEditor label="Page content" value={item.body} onChange={(value) => update({ ...item, body: value })} />
                     </>
                   )}
@@ -1354,14 +1496,24 @@ function SchoolEditor({
   globalAbout,
   onChange,
   onSubmit,
+  onAutoSave,
+  activeCategory,
   activeSection,
+  currentUserEmail,
+  canAccessAllSubjectClasses,
+  onBack,
   onSectionChange,
 }: {
   school: School;
   globalAbout?: GlobalAboutConfig;
   onChange: (school: School) => void;
   onSubmit: () => Promise<void>;
-  activeSection: EditorSection;
+  onAutoSave?: (school: School) => Promise<void>;
+  activeCategory: EditorCategory;
+  activeSection: EditorSection | null;
+  currentUserEmail?: string | null;
+  canAccessAllSubjectClasses?: boolean;
+  onBack: () => void;
   onSectionChange: (section: EditorSection) => void;
 }) {
   const createStaffMember = (): StaffMember => ({
@@ -1372,34 +1524,74 @@ function SchoolEditor({
     visibleOnStaffPage: true,
   });
   const createClassGroup = (): ClassGroup => ({ id: `class-${Date.now()}`, name: "New class", grade: "", teacher: "" });
-  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
-  const [isClassModalOpen, setIsClassModalOpen] = useState(false);
-  const [isSubjectModalOpen, setIsSubjectModalOpen] = useState(false);
-  const [draftStaff, setDraftStaff] = useState<StaffMember>(() => createStaffMember());
-  const [draftClass, setDraftClass] = useState<ClassGroup>(() => createClassGroup());
-  const [draftSubject, setDraftSubject] = useState<Subject>(() => ({
-    id: `subject-${Date.now()}`,
-    name: "New subject",
-    teacherName: "",
-    classIds: [],
-    studentIds: [],
-  }));
-  const setField = <K extends keyof School>(field: K, value: School[K]) => {
-    onChange({ ...school, [field]: value });
-  };
-
   const classes = school.classes ?? [];
   const students = school.students ?? [];
   const subjects = school.subjects ?? [];
+  const subjectClasses = school.subjectClasses ?? [];
+  const accessibleSubjectClasses = subjectClasses.filter((subjectClass) => canAccessAllSubjectClasses || canTeachSubjectClass(school, subjectClass, currentUserEmail));
+  const [activeWorkSubjectClassId, setActiveWorkSubjectClassId] = useState<string | null>(null);
   const aboutCategories = school.aboutCategories ?? [];
   const aboutPages = school.aboutPages ?? [];
+  const createStudent = (): Student => ({
+    id: `student-${Date.now()}`,
+    firstName: "First name",
+    lastName: "Last name",
+    classId: classes[0]?.id ?? "",
+    dateOfBirth: "",
+    gender: "",
+    description: "",
+    guardians: [],
+  });
+  const createNewsItem = (): NewsItem => ({
+    id: `news-${Date.now()}`,
+    title: "New announcement",
+    slug: "",
+    date: "2026-05-01",
+    headerImage: "",
+    body: "<p>Announcement details</p>",
+  });
+  const createCalendarItem = (): CalendarItem => ({ title: "School event", date: "2026-05-01" });
+  const [newsModalIndex, setNewsModalIndex] = useState<number | null | undefined>(undefined);
+  const [calendarModalIndex, setCalendarModalIndex] = useState<number | null | undefined>(undefined);
+  const [staffModalIndex, setStaffModalIndex] = useState<number | null | undefined>(undefined);
+  const [classModalIndex, setClassModalIndex] = useState<number | null | undefined>(undefined);
+  const [subjectClassModalIndex, setSubjectClassModalIndex] = useState<number | null | undefined>(undefined);
+  const [subjectModalIndex, setSubjectModalIndex] = useState<number | null | undefined>(undefined);
+  const [studentModalIndex, setStudentModalIndex] = useState<number | null | undefined>(undefined);
+  const [draftNews, setDraftNews] = useState<NewsItem>(() => createNewsItem());
+  const [draftCalendar, setDraftCalendar] = useState<CalendarItem>(() => createCalendarItem());
+  const [draftStaff, setDraftStaff] = useState<StaffMember>(() => createStaffMember());
+  const [draftClass, setDraftClass] = useState<ClassGroup>(() => createClassGroup());
+  const [draftStudent, setDraftStudent] = useState<Student>(() => createStudent());
+  const [draftSubject, setDraftSubject] = useState<Subject>(() => ({
+    id: `subject-${Date.now()}`,
+    name: "New subject",
+    abbreviation: "",
+    color: subjectColorOptions[0],
+  }));
+  const updateSchool = (nextSchool: School) => {
+    onChange(nextSchool);
+    void onAutoSave?.(nextSchool);
+  };
+  const setField = <K extends keyof School>(field: K, value: School[K]) => {
+    updateSchool({ ...school, [field]: value });
+  };
+
   const createSubject = (): Subject => ({
     id: `subject-${Date.now()}`,
     name: "New subject",
-    teacherName: "",
-    classIds: classes[0] ? [classes[0].id] : [],
-    studentIds: classes[0] ? students.filter((student) => student.classId === classes[0].id).map((student) => student.id) : [],
+    abbreviation: "",
+    color: subjectColorOptions[0],
   });
+  const createSubjectClass = (): SubjectClass => ({
+    id: `subject-class-${Date.now()}`,
+    name: subjects[0] && classes[0] ? `${subjects[0].name} - ${classes[0].name}` : "New subject class",
+    subjectId: subjects[0]?.id ?? "",
+    baseClassId: classes[0]?.id ?? "",
+    teacherName: "",
+    studentIds: [],
+  });
+  const [draftSubjectClass, setDraftSubjectClass] = useState<SubjectClass>(() => createSubjectClass());
   const staffOptions = [
     { value: "", label: "Select staff member" },
     ...school.staff.map((member) => ({ value: member.name, label: `${member.name} - ${member.role}` })),
@@ -1438,7 +1630,7 @@ function SchoolEditor({
   );
   const renderClassFields = (item: ClassGroup, update: (item: ClassGroup) => void) => (
     <>
-      <TextInput label="Class name" value={item.name} onChange={(value) => update({ ...item, name: value })} />
+      <TextInput label="Main class name" value={item.name} onChange={(value) => update({ ...item, name: value })} />
       <TextInput label="Grade" value={item.grade ?? ""} onChange={(value) => update({ ...item, grade: value })} />
       <SelectInput
         label="Class teacher"
@@ -1448,39 +1640,77 @@ function SchoolEditor({
       />
     </>
   );
-  const renderSubjectFields = (item: Subject, update: (item: Subject) => void) => {
-    const selectedClassIds = item.classIds ?? [];
-    const selectedStudentIds = item.studentIds ?? [];
-    const classStudents = students.filter((student) => selectedClassIds.includes(student.classId));
-    const selectedStudents = students.filter((student) => selectedStudentIds.includes(student.id));
+  const renderNewsFields = (item: NewsItem, update: (item: NewsItem) => void) => (
+    <>
+      <TextInput
+        label="Title"
+        value={item.title}
+        onChange={(value) => update({ ...item, title: value, slug: item.slug || slugifySchoolName(value) })}
+      />
+      <TextInput label="URL slug" value={item.slug ?? ""} onChange={(value) => update({ ...item, slug: slugifySchoolName(value) })} />
+      <TextInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
+      <ImageUpload label="Header image" value={item.headerImage ?? ""} onChange={(headerImage) => update({ ...item, headerImage })} />
+      <RichTextEditor label="Body" value={item.body} onChange={(value) => update({ ...item, body: value })} />
+    </>
+  );
+  const renderCalendarFields = (item: CalendarItem, update: (item: CalendarItem) => void) => (
+    <>
+      <TextInput label="Title" value={item.title} onChange={(value) => update({ ...item, title: value })} />
+      <TextInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
+    </>
+  );
+  const renderSubjectFields = (item: Subject, update: (item: Subject) => void) => (
+    <>
+      <TextInput label="Subject name" value={item.name} onChange={(value) => update({ ...item, name: value })} />
+      <TextInput
+        label="Abbreviation"
+        value={item.abbreviation ?? ""}
+        onChange={(value) => update({ ...item, abbreviation: value.toUpperCase().slice(0, 8) })}
+      />
+      <SubjectColorPicker value={item.color ?? subjectColorOptions[0]} onChange={(color) => update({ ...item, color })} />
+    </>
+  );
+  const renderSubjectClassFields = (item: SubjectClass, update: (item: SubjectClass) => void) => {
+    const selectedStudents = students.filter((student) => item.studentIds.includes(student.id));
+    const baseClassStudents = students.filter((student) => student.classId === item.baseClassId);
 
     return (
       <>
-        <TextInput label="Subject name" value={item.name} onChange={(value) => update({ ...item, name: value })} />
+        <TextInput label="Subject class name" value={item.name} onChange={(value) => update({ ...item, name: value })} />
+        <SelectInput
+          label="Subject"
+          value={item.subjectId}
+          options={[
+            { value: "", label: "Select subject" },
+            ...subjects.map((subject) => ({ value: subject.id, label: subject.name })),
+          ]}
+          onChange={(value) => {
+            const subject = subjects.find((currentSubject) => currentSubject.id === value);
+            update({
+              ...item,
+              subjectId: value,
+              name: item.name === "New subject class" && subject ? subject.name : item.name,
+            });
+          }}
+        />
+        <SelectInput
+          label="Based on main class"
+          value={item.baseClassId ?? ""}
+          options={[
+            { value: "", label: "Mixed classes" },
+            ...classes.map((classGroup) => ({ value: classGroup.id, label: classGroup.name })),
+          ]}
+          onChange={(value) => update({ ...item, baseClassId: value })}
+        />
         <SelectInput
           label="Teacher"
-          value={item.teacherName}
+          value={item.teacherName ?? ""}
           options={staffOptions}
           onChange={(value) => update({ ...item, teacherName: value })}
         />
         <CheckboxGroup
-          label="Classes included"
-          options={classes.map((classGroup) => ({
-            value: classGroup.id,
-            label: `${classGroup.name}${classGroup.grade ? ` - Grade ${classGroup.grade}` : ""}`,
-          }))}
-          values={selectedClassIds}
-          onChange={(classIds) => update({
-            ...item,
-            classIds,
-            studentIds: mergeUnique([
-              ...selectedStudentIds,
-              ...students.filter((student) => classIds.includes(student.classId)).map((student) => student.id),
-            ]),
-          })}
-        />
-        <CheckboxGroup
-          label="Students included"
+          label="Students in subject class"
+          allowSelectAll
           options={students.map((student) => {
             const classGroup = classes.find((currentClass) => currentClass.id === student.classId);
             return {
@@ -1488,16 +1718,47 @@ function SchoolEditor({
               label: `${student.firstName} ${student.lastName}${classGroup ? ` - ${classGroup.name}` : ""}`,
             };
           })}
-          values={selectedStudentIds}
+          values={item.studentIds}
           onChange={(studentIds) => update({ ...item, studentIds })}
         />
         <div className="subject-summary">
           <strong>{selectedStudents.length} student{selectedStudents.length === 1 ? "" : "s"} selected</strong>
-          <span>{classStudents.length} student{classStudents.length === 1 ? "" : "s"} currently in selected class{selectedClassIds.length === 1 ? "" : "es"}</span>
+          <span>{baseClassStudents.length} student{baseClassStudents.length === 1 ? "" : "s"} currently in the selected main class</span>
         </div>
       </>
     );
   };
+  const renderStudentFields = (item: Student, update: (item: Student) => void) => (
+    <>
+      <div className="split-fields">
+        <TextInput label="First name" value={item.firstName} onChange={(value) => update({ ...item, firstName: value })} />
+        <TextInput label="Last name" value={item.lastName} onChange={(value) => update({ ...item, lastName: value })} />
+      </div>
+      <SelectInput
+        label="Class"
+        value={item.classId}
+        options={classes.map((classGroup) => ({ value: classGroup.id, label: classGroup.name }))}
+        onChange={(value) => update({ ...item, classId: value })}
+      />
+      <div className="split-fields">
+        <TextInput label="Date of birth" value={item.dateOfBirth ?? ""} onChange={(value) => update({ ...item, dateOfBirth: value })} />
+        <SelectInput
+          label="Gender"
+          value={item.gender ?? ""}
+          options={[
+            { value: "", label: "Select gender" },
+            { value: "Female", label: "Female" },
+            { value: "Male", label: "Male" },
+            { value: "Other", label: "Other" },
+            { value: "Prefer not to say", label: "Prefer not to say" },
+          ]}
+          onChange={(value) => update({ ...item, gender: value })}
+        />
+      </div>
+      <TextArea label="Description (optional)" value={item.description ?? ""} onChange={(value) => update({ ...item, description: value })} />
+      <GuardianEditor guardians={item.guardians ?? []} onChange={(guardians) => update({ ...item, guardians })} />
+    </>
+  );
   const globalCategories = globalAbout?.categories ?? [];
   const globalPageSlugs = new Set(globalAbout?.pages.map((page) => page.slug) ?? []);
   const editableAboutPages = aboutPages.filter((page) => !globalPageSlugs.has(page.slug));
@@ -1506,6 +1767,7 @@ function SchoolEditor({
     ...aboutCategories.map((category) => ({ value: category.id, label: category.title })),
   ];
   const defaultAboutCategoryId = aboutCategories[0]?.id ?? globalCategories[0]?.id ?? "";
+  const activeCategoryInfo = editorCategories.find((category) => category.id === activeCategory) ?? editorCategories[0];
 
   return (
     <form
@@ -1516,6 +1778,15 @@ function SchoolEditor({
       }}
     >
       <div className="editor-grid">
+        {!activeSection ? (
+          <EditorSectionCards category={activeCategoryInfo} onSelect={onSectionChange} />
+        ) : (
+          <div className="editor-back-row">
+            <button className="secondary-action" type="button" onClick={onBack}>
+              Back
+            </button>
+          </div>
+        )}
         {activeSection === "profile" ? (
           <EditorPanel title="School profile">
             <TextInput label="URL slug" value={school.id} onChange={(value) => setField("id", slugifySchoolName(value))} />
@@ -1523,40 +1794,45 @@ function SchoolEditor({
             <TextInput label="School type" value={school.type} onChange={(value) => setField("type", value)} />
             <TextInput label="Tagline" value={school.tagline} onChange={(value) => setField("tagline", value)} />
             <TextArea label="About" value={school.about} onChange={(value) => setField("about", value)} />
-            <TextInput label="Hero image URL" value={school.heroImage} onChange={(value) => setField("heroImage", value)} icon={<ImagePlus size={18} />} />
-      <div className="split-fields">
-        {/* MAIN COLOR */}
-        <label className="field-label color-field">
-          Main color
-          <div className="color-input-wrapper">
-            <div
-              className="color-preview"
-              style={{ background: school.mainColor ?? "#18322e" }}
+            <CheckboxInput
+              label="Show school website"
+              checked={school.showWebsite ?? true}
+              onChange={(checked) => setField("showWebsite", checked)}
             />
-            <input
-              type="color"
-              value={school.mainColor ?? "#18322e"}
-              onChange={(e) => setField("mainColor", e.target.value)}
-            />
-          </div>
-        </label>
+            <ImageUpload label="Hero image" value={school.heroImage} onChange={(heroImage) => setField("heroImage", heroImage)} variant="hero" />
+            <div className="split-fields">
+              {/* MAIN COLOR */}
+              <label className="field-label color-field">
+                Main color
+                <div className="color-input-wrapper">
+                  <div
+                    className="color-preview"
+                    style={{ background: school.mainColor ?? "#18322e" }}
+                  />
+                  <input
+                    type="color"
+                    value={school.mainColor ?? "#18322e"}
+                    onChange={(e) => setField("mainColor", e.target.value)}
+                  />
+                </div>
+              </label>
 
-        {/* SUB COLOR */}
-        <label className="field-label color-field">
-          Sub color
-          <div className="color-input-wrapper">
-            <div
-              className="color-preview"
-              style={{ background: school.subColor ?? "#e0b44f" }}
-            />
-            <input
-              type="color"
-              value={school.subColor ?? "#e0b44f"}
-              onChange={(e) => setField("subColor", e.target.value)}
-            />
-          </div>
-        </label>
-      </div>
+              {/* SUB COLOR */}
+              <label className="field-label color-field">
+                Sub color
+                <div className="color-input-wrapper">
+                  <div
+                    className="color-preview"
+                    style={{ background: school.subColor ?? "#e0b44f" }}
+                  />
+                  <input
+                    type="color"
+                    value={school.subColor ?? "#e0b44f"}
+                    onChange={(e) => setField("subColor", e.target.value)}
+                  />
+                </div>
+              </label>
+            </div>
             <TextInput label="Values, comma separated" value={school.values.join(", ")} onChange={(value) => setField("values", splitCsv(value))} />
             <TextInput
               label="Admin emails, comma separated"
@@ -1603,7 +1879,7 @@ function SchoolEditor({
                   onChange={(items) => {
                     const validIds = new Set(items.map((item) => item.id));
                     const validGlobalIds = new Set(globalCategories.map((item) => item.id));
-                    onChange({
+                    updateSchool({
                       ...school,
                       aboutCategories: items,
                       aboutPages: aboutPages.map((page) => ({
@@ -1653,7 +1929,7 @@ function SchoolEditor({
                           options={editableAboutCategoryOptions}
                           onChange={(value) => update({ ...item, categoryId: value })}
                         />
-                        <TextInput label="Header image URL" value={item.headerImage ?? ""} onChange={(value) => update({ ...item, headerImage: value })} />
+                        <ImageUpload label="Header image" value={item.headerImage ?? ""} onChange={(headerImage) => update({ ...item, headerImage })} />
                         <RichTextEditor label="Page content" value={item.body} onChange={(value) => update({ ...item, body: value })} />
                       </>
                     )}
@@ -1666,83 +1942,113 @@ function SchoolEditor({
 
         {activeSection === "news" ? (
           <EditorPanel title="News">
-            <Repeater
-              items={school.announcements}
-              addLabel="Add news"
-              createItem={() => ({
-                id: `news-${Date.now()}`,
-                title: "New announcement",
-                slug: "",
-                date: "2026-05-01",
-                headerImage: "",
-                body: "<p>Announcement details</p>",
-              })}
-              onChange={(items) => setField("announcements", items)}
-              renderItem={(item, update) => (
-                <>
-                  <TextInput
-                    label="Title"
-                    value={item.title}
-                    onChange={(value) => update({ ...item, title: value, slug: item.slug || slugifySchoolName(value) })}
-                  />
-                  <TextInput label="URL slug" value={item.slug ?? ""} onChange={(value) => update({ ...item, slug: slugifySchoolName(value) })} />
-                  <TextInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
-                  <TextInput label="Header image URL" value={item.headerImage ?? ""} onChange={(value) => update({ ...item, headerImage: value })} />
-                  <RichTextEditor label="Body" value={item.body} onChange={(value) => update({ ...item, body: value })} />
-                </>
-              )}
+            <button
+              className="secondary-action repeater-add-button"
+              type="button"
+              onClick={() => {
+                setDraftNews(createNewsItem());
+                setNewsModalIndex(null);
+              }}
+            >
+              Add news
+            </button>
+            <NewsTable
+              news={school.announcements}
+              onEdit={(item, index) => {
+                setDraftNews(item);
+                setNewsModalIndex(index);
+              }}
+              onRemove={(index) => setField("announcements", school.announcements.filter((_, currentIndex) => currentIndex !== index))}
             />
+            {newsModalIndex !== undefined ? (
+              <RegistrationModal
+                title={newsModalIndex === null ? "Create news" : "Edit news"}
+                eyebrow="News"
+                submitLabel={newsModalIndex === null ? "Add news" : "Save news"}
+                onClose={() => setNewsModalIndex(undefined)}
+                onSubmit={() => {
+                  setField("announcements", newsModalIndex === null
+                    ? [...school.announcements, draftNews]
+                    : school.announcements.map((item, index) => index === newsModalIndex ? draftNews : item));
+                  setNewsModalIndex(undefined);
+                }}
+              >
+                {renderNewsFields(draftNews, setDraftNews)}
+              </RegistrationModal>
+            ) : null}
           </EditorPanel>
         ) : null}
 
         {activeSection === "calendar" ? (
           <EditorPanel title="Calendar">
-            <Repeater
+            <button
+              className="secondary-action repeater-add-button"
+              type="button"
+              onClick={() => {
+                setDraftCalendar(createCalendarItem());
+                setCalendarModalIndex(null);
+              }}
+            >
+              Add event
+            </button>
+            <CalendarTable
               items={school.calendar}
-              addLabel="Add event"
-              createItem={() => ({ title: "School event", date: "2026-05-01" })}
-              onChange={(items) => setField("calendar", items)}
-              renderItem={(item, update) => (
-                <>
-                  <TextInput label="Title" value={item.title} onChange={(value) => update({ ...item, title: value })} />
-                  <TextInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
-                </>
-              )}
+              onEdit={(item, index) => {
+                setDraftCalendar(item);
+                setCalendarModalIndex(index);
+              }}
+              onRemove={(index) => setField("calendar", school.calendar.filter((_, currentIndex) => currentIndex !== index))}
             />
+            {calendarModalIndex !== undefined ? (
+              <RegistrationModal
+                title={calendarModalIndex === null ? "Create event" : "Edit event"}
+                eyebrow="Calendar"
+                submitLabel={calendarModalIndex === null ? "Add event" : "Save event"}
+                onClose={() => setCalendarModalIndex(undefined)}
+                onSubmit={() => {
+                  setField("calendar", calendarModalIndex === null
+                    ? [...school.calendar, draftCalendar]
+                    : school.calendar.map((item, index) => index === calendarModalIndex ? draftCalendar : item));
+                  setCalendarModalIndex(undefined);
+                }}
+              >
+                {renderCalendarFields(draftCalendar, setDraftCalendar)}
+              </RegistrationModal>
+            ) : null}
           </EditorPanel>
         ) : null}
 
         {activeSection === "staff" ? (
           <EditorPanel title="Staff">
-            <div className="repeater">
-              <button
-                className="secondary-action repeater-add-button"
-                type="button"
-                onClick={() => {
-                  setDraftStaff(createStaffMember());
-                  setIsStaffModalOpen(true);
-                }}
-              >
-                Add staff member
-              </button>
-              {school.staff.map((item, index) => (
-                <div className="repeater-item" key={`${item.name}-${index}`}>
-                  {renderStaffFields(item, (nextItem) => setField("staff", school.staff.map((current, currentIndex) => (currentIndex === index ? nextItem : current))))}
-                  <button className="remove-button" type="button" onClick={() => setField("staff", school.staff.filter((_, currentIndex) => currentIndex !== index))}>
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-            {isStaffModalOpen ? (
+            <button
+              className="secondary-action repeater-add-button"
+              type="button"
+              onClick={() => {
+                setDraftStaff(createStaffMember());
+                setStaffModalIndex(null);
+              }}
+            >
+              Add staff member
+            </button>
+            <StaffTable
+              staff={school.staff}
+              onEdit={(member, index) => {
+                setDraftStaff(member);
+                setStaffModalIndex(index);
+              }}
+              onRemove={(index) => setField("staff", school.staff.filter((_, currentIndex) => currentIndex !== index))}
+            />
+            {staffModalIndex !== undefined ? (
               <RegistrationModal
-                title="Register staff member"
+                title={staffModalIndex === null ? "Register staff member" : "Edit staff member"}
                 eyebrow="Staff"
-                submitLabel="Add staff member"
-                onClose={() => setIsStaffModalOpen(false)}
+                submitLabel={staffModalIndex === null ? "Add staff member" : "Save staff member"}
+                onClose={() => setStaffModalIndex(undefined)}
                 onSubmit={() => {
-                  setField("staff", [...school.staff, draftStaff]);
-                  setIsStaffModalOpen(false);
+                  setField("staff", staffModalIndex === null
+                    ? [...school.staff, draftStaff]
+                    : school.staff.map((member, index) => index === staffModalIndex ? draftStaff : member));
+                  setStaffModalIndex(undefined);
                 }}
               >
                 {renderStaffFields(draftStaff, setDraftStaff)}
@@ -1753,65 +2059,137 @@ function SchoolEditor({
 
         {activeSection === "classes" ? (
           <EditorPanel title="Classes">
-            <div className="repeater">
-              <button
-                className="secondary-action repeater-add-button"
-                type="button"
-                onClick={() => {
-                  setDraftClass(createClassGroup());
-                  setIsClassModalOpen(true);
-                }}
-              >
-                Add class
-              </button>
-              {classes.map((item, index) => (
-                <div className="repeater-item" key={item.id}>
-                  {renderClassFields(item, (nextItem) => {
-                    const nextClasses = classes.map((current, currentIndex) => (currentIndex === index ? nextItem : current));
-                    const validIds = new Set(nextClasses.map((classGroup) => classGroup.id));
-                    onChange({
+            <button
+              className="secondary-action repeater-add-button"
+              type="button"
+              onClick={() => {
+                setDraftClass(createClassGroup());
+                setClassModalIndex(null);
+              }}
+            >
+              Add main class
+            </button>
+            <ClassTable
+              classes={classes}
+              students={students}
+              subjectClasses={subjectClasses}
+              onEdit={(classGroup, index) => {
+                setDraftClass(classGroup);
+                setClassModalIndex(index);
+              }}
+              onRemove={(index) => {
+                const nextClasses = classes.filter((_, currentIndex) => currentIndex !== index);
+                const validIds = new Set(nextClasses.map((classGroup) => classGroup.id));
+                updateSchool({
+                  ...school,
+                  classes: nextClasses,
+                  students: students.map((student) => ({
+                    ...student,
+                    classId: validIds.has(student.classId) ? student.classId : nextClasses[0]?.id ?? "",
+                  })),
+                  subjectClasses: subjectClasses.map((subjectClass) => ({
+                    ...subjectClass,
+                    baseClassId: subjectClass.baseClassId && validIds.has(subjectClass.baseClassId) ? subjectClass.baseClassId : "",
+                  })),
+                });
+              }}
+            />
+            {classModalIndex !== undefined ? (
+              <RegistrationModal
+                title={classModalIndex === null ? "Create main class" : "Edit main class"}
+                eyebrow="Classes"
+                submitLabel={classModalIndex === null ? "Add class" : "Save class"}
+                onClose={() => setClassModalIndex(undefined)}
+                onSubmit={() => {
+                  const nextClasses = classModalIndex === null
+                    ? [...classes, draftClass]
+                    : classes.map((current, currentIndex) => (currentIndex === classModalIndex ? draftClass : current));
+                  const validIds = new Set(nextClasses.map((classGroup) => classGroup.id));
+                  if (classModalIndex === null) {
+                    updateSchool({ ...school, classes: nextClasses });
+                  } else {
+                    updateSchool({
                       ...school,
                       classes: nextClasses,
                       students: students.map((student) => ({
                         ...student,
                         classId: validIds.has(student.classId) ? student.classId : nextClasses[0]?.id ?? "",
                       })),
+                      subjectClasses: subjectClasses.map((subjectClass) => ({
+                        ...subjectClass,
+                        baseClassId: subjectClass.baseClassId && validIds.has(subjectClass.baseClassId) ? subjectClass.baseClassId : "",
+                      })),
                     });
-                  })}
-                  <button
-                    className="remove-button"
-                    type="button"
-                    onClick={() => {
-                      const nextClasses = classes.filter((_, currentIndex) => currentIndex !== index);
-                      const validIds = new Set(nextClasses.map((classGroup) => classGroup.id));
-                      onChange({
-                        ...school,
-                        classes: nextClasses,
-                        students: students.map((student) => ({
-                          ...student,
-                          classId: validIds.has(student.classId) ? student.classId : nextClasses[0]?.id ?? "",
-                        })),
-                      });
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-            {isClassModalOpen ? (
-              <RegistrationModal
-                title="Create class"
-                eyebrow="Classes"
-                submitLabel="Add class"
-                onClose={() => setIsClassModalOpen(false)}
-                onSubmit={() => {
-                  const nextClasses = [...classes, draftClass];
-                  onChange({ ...school, classes: nextClasses });
-                  setIsClassModalOpen(false);
+                  }
+                  setClassModalIndex(undefined);
                 }}
               >
                 {renderClassFields(draftClass, setDraftClass)}
+              </RegistrationModal>
+            ) : null}
+            <div className="section-heading compact-section-heading">
+              <h2>Subject classes</h2>
+              <button
+                className="secondary-action repeater-add-button"
+                type="button"
+                onClick={() => {
+                  setDraftSubjectClass(createSubjectClass());
+                  setSubjectClassModalIndex(null);
+                }}
+                disabled={subjects.length === 0}
+              >
+                Add subject class
+              </button>
+            </div>
+            {subjects.length === 0 ? (
+              <div className="empty-editor-state">
+                <h3>Add a subject first</h3>
+                <p>Subject classes need a subject. Students can be added later and can come from multiple main classes.</p>
+              </div>
+            ) : subjectClasses.length === 0 ? (
+              <div className="empty-editor-state">
+                <h3>No subject classes yet</h3>
+                <p>Add a subject class to create a course group such as Math for 8A or a mixed student group.</p>
+              </div>
+            ) : (
+              <div className="repeater">
+                {subjectClasses.map((item, index) => (
+                  <div className="repeater-item" key={item.id}>
+                    <div className="subject-summary">
+                      <strong>{item.name}</strong>
+                      <span>{subjects.find((subject) => subject.id === item.subjectId)?.name ?? "No subject"} · {item.teacherName || "No teacher assigned"} · {item.studentIds.length} student{item.studentIds.length === 1 ? "" : "s"}</span>
+                    </div>
+                    <button
+                      className="secondary-action repeater-add-button"
+                      type="button"
+                      onClick={() => {
+                        setDraftSubjectClass(item);
+                        setSubjectClassModalIndex(index);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button className="remove-button" type="button" onClick={() => setField("subjectClasses", subjectClasses.filter((_, currentIndex) => currentIndex !== index))}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {subjectClassModalIndex !== undefined ? (
+              <RegistrationModal
+                title={subjectClassModalIndex === null ? "Create subject class" : "Edit subject class"}
+                eyebrow="Subject classes"
+                submitLabel={subjectClassModalIndex === null ? "Create subject class" : "Save subject class"}
+                onClose={() => setSubjectClassModalIndex(undefined)}
+                onSubmit={() => {
+                  setField("subjectClasses", subjectClassModalIndex === null
+                    ? [...subjectClasses, draftSubjectClass]
+                    : subjectClasses.map((item, index) => index === subjectClassModalIndex ? draftSubjectClass : item));
+                  setSubjectClassModalIndex(undefined);
+                }}
+              >
+                {renderSubjectClassFields(draftSubjectClass, setDraftSubjectClass)}
               </RegistrationModal>
             ) : null}
           </EditorPanel>
@@ -1819,54 +2197,71 @@ function SchoolEditor({
 
         {activeSection === "subjects" ? (
           <EditorPanel title="Subjects">
-            {classes.length === 0 || students.length === 0 ? (
-              <div className="empty-editor-state">
-                <h3>Add classes and students first</h3>
-                <p>Subjects use existing classes and students. Create at least one class and one student before adding subjects.</p>
-                <div className="admin-actions">
-                  <button className="primary-action" type="button" onClick={() => onSectionChange("classes")}>
-                    Go to classes
-                  </button>
-                  <button className="secondary-action" type="button" onClick={() => onSectionChange("students")}>
-                    Go to students
-                  </button>
-                </div>
-              </div>
+            <button
+              className="secondary-action repeater-add-button"
+              type="button"
+              onClick={() => {
+                setDraftSubject(createSubject());
+                setSubjectModalIndex(null);
+              }}
+            >
+              Add subject
+            </button>
+            <SubjectTable
+              subjects={subjects}
+              subjectClasses={subjectClasses}
+              onEdit={(item, index) => {
+                setDraftSubject(item);
+                setSubjectModalIndex(index);
+              }}
+              onRemove={(index) => {
+                const removedSubjectId = subjects[index]?.id;
+                const nextSchool = {
+                  ...school,
+                  subjects: subjects.filter((_, currentIndex) => currentIndex !== index),
+                  subjectClasses: subjectClasses.filter((subjectClass) => subjectClass.subjectId !== removedSubjectId),
+                };
+                onChange(nextSchool);
+                void onAutoSave?.(nextSchool);
+              }}
+            />
+            {subjectModalIndex !== undefined ? (
+              <RegistrationModal
+                title={subjectModalIndex === null ? "Create subject" : "Edit subject"}
+                eyebrow="Subjects"
+                submitLabel={subjectModalIndex === null ? "Add subject" : "Save subject"}
+                onClose={() => setSubjectModalIndex(undefined)}
+                onSubmit={() => {
+                  setField("subjects", subjectModalIndex === null
+                    ? [...subjects, draftSubject]
+                    : subjects.map((item, index) => index === subjectModalIndex ? draftSubject : item));
+                  setSubjectModalIndex(undefined);
+                }}
+              >
+                {renderSubjectFields(draftSubject, setDraftSubject)}
+              </RegistrationModal>
+            ) : null}
+          </EditorPanel>
+        ) : null}
+
+        {activeSection === "schoolWork" ? (
+          <EditorPanel title="School work">
+            {activeWorkSubjectClassId ? (
+              <SubjectClassWorkPage
+                subjectClass={subjectClasses.find((item) => item.id === activeWorkSubjectClassId) ?? null}
+                subjects={subjects}
+                students={students}
+                onBack={() => setActiveWorkSubjectClassId(null)}
+                onChange={(nextSubjectClass) => setField("subjectClasses", subjectClasses.map((item) => item.id === nextSubjectClass.id ? nextSubjectClass : item))}
+              />
             ) : (
-              <div className="repeater">
-                <button
-                  className="secondary-action repeater-add-button"
-                  type="button"
-                  onClick={() => {
-                    setDraftSubject(createSubject());
-                    setIsSubjectModalOpen(true);
-                  }}
-                >
-                  Add subject
-                </button>
-                {subjects.map((item, index) => (
-                  <div className="repeater-item" key={item.id}>
-                    {renderSubjectFields(item, (nextItem) => setField("subjects", subjects.map((current, currentIndex) => (currentIndex === index ? nextItem : current))))}
-                    <button className="remove-button" type="button" onClick={() => setField("subjects", subjects.filter((_, currentIndex) => currentIndex !== index))}>
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                {isSubjectModalOpen ? (
-                  <RegistrationModal
-                    title="Create subject"
-                    eyebrow="Subjects"
-                    submitLabel="Add subject"
-                    onClose={() => setIsSubjectModalOpen(false)}
-                    onSubmit={() => {
-                      setField("subjects", [...subjects, draftSubject]);
-                      setIsSubjectModalOpen(false);
-                    }}
-                  >
-                    {renderSubjectFields(draftSubject, setDraftSubject)}
-                  </RegistrationModal>
-                ) : null}
-              </div>
+              <SubjectClassWorkTable
+                subjectClasses={accessibleSubjectClasses}
+                subjects={subjects}
+                classes={classes}
+                students={students}
+                onOpen={(subjectClassId) => setActiveWorkSubjectClassId(subjectClassId)}
+              />
             )}
           </EditorPanel>
         ) : null}
@@ -1882,52 +2277,55 @@ function SchoolEditor({
                 </button>
               </div>
             ) : (
-              <Repeater
-                items={students}
-                addLabel="Add student"
-                createItem={(): Student => ({
-                  id: `student-${Date.now()}`,
-                  firstName: "First name",
-                  lastName: "Last name",
-                  classId: classes[0].id,
-                  dateOfBirth: "",
-                  gender: "",
-                  description: "",
-                  guardians: [],
-                })}
-                onChange={(items) => setField("students", items)}
-                renderItem={(item, update) => (
-                  <>
-                    <div className="split-fields">
-                      <TextInput label="First name" value={item.firstName} onChange={(value) => update({ ...item, firstName: value })} />
-                      <TextInput label="Last name" value={item.lastName} onChange={(value) => update({ ...item, lastName: value })} />
-                    </div>
-                    <SelectInput
-                      label="Class"
-                      value={item.classId}
-                      options={classes.map((classGroup) => ({ value: classGroup.id, label: classGroup.name }))}
-                      onChange={(value) => update({ ...item, classId: value })}
-                    />
-                    <div className="split-fields">
-                      <TextInput label="Date of birth" value={item.dateOfBirth ?? ""} onChange={(value) => update({ ...item, dateOfBirth: value })} />
-                      <SelectInput
-                        label="Gender"
-                        value={item.gender ?? ""}
-                        options={[
-                          { value: "", label: "Select gender" },
-                          { value: "Female", label: "Female" },
-                          { value: "Male", label: "Male" },
-                          { value: "Other", label: "Other" },
-                          { value: "Prefer not to say", label: "Prefer not to say" },
-                        ]}
-                        onChange={(value) => update({ ...item, gender: value })}
-                      />
-                    </div>
-                    <TextArea label="Description (optional)" value={item.description ?? ""} onChange={(value) => update({ ...item, description: value })} />
-                    <GuardianEditor guardians={item.guardians ?? []} onChange={(guardians) => update({ ...item, guardians })} />
-                  </>
-                )}
-              />
+              <>
+                <button
+                  className="secondary-action repeater-add-button"
+                  type="button"
+                  onClick={() => {
+                    setDraftStudent(createStudent());
+                    setStudentModalIndex(null);
+                  }}
+                >
+                  Add student
+                </button>
+                <StudentTable
+                  students={students}
+                  classes={classes}
+                  onEdit={(student, index) => {
+                    setDraftStudent(student);
+                    setStudentModalIndex(index);
+                  }}
+                  onRemove={(index) => {
+                    const removedStudentId = students[index]?.id;
+                    updateSchool({
+                      ...school,
+                      students: students.filter((_, currentIndex) => currentIndex !== index),
+                      subjectClasses: removedStudentId
+                        ? subjectClasses.map((subjectClass) => ({
+                          ...subjectClass,
+                          studentIds: subjectClass.studentIds.filter((studentId) => studentId !== removedStudentId),
+                        }))
+                        : subjectClasses,
+                    });
+                  }}
+                />
+                {studentModalIndex !== undefined ? (
+                  <RegistrationModal
+                    title={studentModalIndex === null ? "Add student" : "Edit student"}
+                    eyebrow="Students"
+                    submitLabel={studentModalIndex === null ? "Add student" : "Save student"}
+                    onClose={() => setStudentModalIndex(undefined)}
+                    onSubmit={() => {
+                      setField("students", studentModalIndex === null
+                        ? [...students, draftStudent]
+                        : students.map((student, index) => index === studentModalIndex ? draftStudent : student));
+                      setStudentModalIndex(undefined);
+                    }}
+                  >
+                    {renderStudentFields(draftStudent, setDraftStudent)}
+                  </RegistrationModal>
+                ) : null}
+              </>
             )}
           </EditorPanel>
         ) : null}
@@ -1937,25 +2335,668 @@ function SchoolEditor({
 }
 
 function EditorMenu({
+  activeCategory,
   activeSection,
   onChange,
 }: {
-  activeSection: EditorSection;
-  onChange: (section: EditorSection) => void;
+  activeCategory: EditorCategory;
+  activeSection: EditorSection | null;
+  onChange: (category: EditorCategory) => void;
 }) {
   return (
-    <nav className="editor-menu" aria-label="School admin sections">
-      {editorSections.map((section) => (
+    <nav className="editor-menu" aria-label="School admin categories">
+      {editorCategories.map((category) => (
         <button
-          className={activeSection === section.id ? "active-editor-section" : ""}
-          key={section.id}
+          className={activeCategory === category.id ? "active-editor-section" : ""}
+          key={category.id}
           type="button"
-          onClick={() => onChange(section.id)}
+          onClick={() => onChange(category.id)}
         >
-          {section.label}
+          <span>{category.label}</span>
+          <small>{activeSection && category.sections.includes(activeSection) ? getEditorSectionLabel(activeSection) : category.description}</small>
         </button>
       ))}
     </nav>
+  );
+}
+
+function EditorSectionCards({
+  category,
+  onSelect,
+}: {
+  category: (typeof editorCategories)[number];
+  onSelect: (section: EditorSection) => void;
+}) {
+  return (
+    <section className="editor-section-picker">
+      <div>
+        <p className="eyebrow">{category.label}</p>
+        <h2>{category.label}</h2>
+        <p>{category.description}</p>
+      </div>
+      <div className="editor-section-card-grid">
+        {category.sections.map((section) => (
+          <button className="editor-section-card" key={section} type="button" onClick={() => onSelect(section)}>
+            <strong>{getEditorSectionLabel(section)}</strong>
+            <span>{getEditorSectionDescription(section)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function getEditorSectionLabel(section: EditorSection) {
+  return editorSections.find((item) => item.id === section)?.label ?? section;
+}
+
+function getEditorCategoryForSection(section: EditorSection) {
+  return editorCategories.find((category) => category.sections.includes(section))?.id ?? "schoolPage";
+}
+
+function getEditorStateFromHash(): { category: EditorCategory; section: EditorSection | null } {
+  const [categoryValue, sectionValue] = window.location.hash.replace(/^#/, "").split("/");
+  const category = editorCategories.some((item) => item.id === categoryValue) ? categoryValue as EditorCategory : "schoolPage";
+  const section = editorSections.some((item) => item.id === sectionValue) ? sectionValue as EditorSection : null;
+
+  if (section && getEditorCategoryForSection(section) !== category) {
+    return { category: getEditorCategoryForSection(section), section };
+  }
+
+  return { category, section };
+}
+
+function setEditorHash(category: EditorCategory, section?: EditorSection) {
+  const nextHash = section ? `#${category}/${section}` : `#${category}`;
+  if (window.location.hash !== nextHash) {
+    window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+  }
+}
+
+function getEditorSectionDescription(section: EditorSection) {
+  const descriptions: Record<EditorSection, string> = {
+    profile: "School identity, colors, headline text, and hero image.",
+    contact: "Address, phone, email, location, and principal details.",
+    about: "About page categories, pages, and rich content.",
+    news: "School news articles and announcements.",
+    calendar: "Important school dates and events.",
+    staff: "Staff profiles, visibility, and contact details.",
+    classes: "Main classes and subject classes with student groups.",
+    subjects: "Subject catalog, abbreviations, and display colors.",
+    schoolWork: "Course materials and assignments for subject classes.",
+    students: "Student records, guardians, and class assignments.",
+  };
+  return descriptions[section];
+}
+
+function StudentTable({
+  students,
+  classes,
+  onEdit,
+  onRemove,
+}: {
+  students: Student[];
+  classes: ClassGroup[];
+  onEdit: (student: Student, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (students.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No students yet</h3>
+        <p>Add a student to start building the student list.</p>
+      </div>
+    );
+  }
+
+  const getClassName = (classId: string) => classes.find((classGroup) => classGroup.id === classId)?.name ?? "No class";
+  const getGuardianSummary = (student: Student) => {
+    const guardians = student.guardians ?? [];
+    if (guardians.length === 0) {
+      return "No guardians";
+    }
+    return guardians.map((guardian) => [guardian.name, guardian.relationship].filter(Boolean).join(" - ")).join(", ");
+  };
+
+  return (
+    <div className="data-table-wrap">
+      <table className="data-table student-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Class</th>
+            <th>Date of birth</th>
+            <th>Gender</th>
+            <th>Guardians</th>
+            <th>Description</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {students.map((student, index) => (
+            <tr key={student.id || `${student.firstName}-${student.lastName}-${index}`}>
+              <td>
+                <strong>{student.firstName} {student.lastName}</strong>
+                <span>{student.id}</span>
+              </td>
+              <td>{getClassName(student.classId)}</td>
+              <td>{student.dateOfBirth || "Not set"}</td>
+              <td>{student.gender || "Not set"}</td>
+              <td>{getGuardianSummary(student)}</td>
+              <td>{student.description || "No description"}</td>
+              <td>
+                <div className="table-actions">
+                  <button className="secondary-action" type="button" onClick={() => onEdit(student, index)}>
+                    Edit
+                  </button>
+                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ClassTable({
+  classes,
+  students,
+  subjectClasses,
+  onEdit,
+  onRemove,
+}: {
+  classes: ClassGroup[];
+  students: Student[];
+  subjectClasses: SubjectClass[];
+  onEdit: (classGroup: ClassGroup, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (classes.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No main classes yet</h3>
+        <p>Add main classes like 8A and 8B before assigning students.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="data-table-wrap">
+      <table className="data-table class-table">
+        <thead>
+          <tr>
+            <th>Main class</th>
+            <th>Grade</th>
+            <th>Class teacher</th>
+            <th>Students</th>
+            <th>Subject classes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {classes.map((classGroup, index) => (
+            <tr key={classGroup.id}>
+              <td>
+                <strong>{classGroup.name}</strong>
+                <span>{classGroup.id}</span>
+              </td>
+              <td>{classGroup.grade || "Not set"}</td>
+              <td>{classGroup.teacher || "Not assigned"}</td>
+              <td>{students.filter((student) => student.classId === classGroup.id).length}</td>
+              <td>{subjectClasses.filter((subjectClass) => subjectClass.baseClassId === classGroup.id).length}</td>
+              <td>
+                <div className="table-actions">
+                  <button className="secondary-action" type="button" onClick={() => onEdit(classGroup, index)}>
+                    Edit
+                  </button>
+                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StaffTable({
+  staff,
+  onEdit,
+  onRemove,
+}: {
+  staff: StaffMember[];
+  onEdit: (member: StaffMember, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (staff.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No staff members yet</h3>
+        <p>Add staff members to publish profiles and assign teachers.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="data-table-wrap">
+      <table className="data-table staff-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Contact</th>
+            <th>Visibility</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {staff.map((member, index) => (
+            <tr key={`${member.name}-${index}`}>
+              <td>
+                <strong>{member.name}</strong>
+                {member.photoUrl ? <span>Photo uploaded</span> : <span>No photo</span>}
+              </td>
+              <td>{member.category ?? "Other"}</td>
+              <td>{member.role || "No description"}</td>
+              <td>
+                {member.phone ? <span>{member.phone}</span> : null}
+                {member.email ? <span>{member.email}</span> : null}
+                {!member.phone && !member.email ? "No contact" : null}
+              </td>
+              <td>
+                <span>{member.visibleOnHomePage === false ? "Hidden from home" : "Home page"}</span>
+                <span>{member.visibleOnStaffPage === false ? "Hidden from staff page" : "Staff page"}</span>
+              </td>
+              <td>
+                <div className="table-actions">
+                  <button className="secondary-action" type="button" onClick={() => onEdit(member, index)}>
+                    Edit
+                  </button>
+                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function NewsTable({
+  news,
+  onEdit,
+  onRemove,
+}: {
+  news: NewsItem[];
+  onEdit: (item: NewsItem, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (news.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No news yet</h3>
+        <p>Add news items to publish updates on the school website.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="data-table-wrap">
+      <table className="data-table news-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Date</th>
+            <th>Slug</th>
+            <th>Image</th>
+            <th>Excerpt</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {news.map((item, index) => (
+            <tr key={item.id || `${item.title}-${index}`}>
+              <td><strong>{item.title}</strong></td>
+              <td>{item.date}</td>
+              <td>{item.slug || getNewsSlug(item)}</td>
+              <td>{item.headerImage ? "Image set" : "No image"}</td>
+              <td>{getTextExcerpt(item.body, 120) || "No body"}</td>
+              <td>
+                <div className="table-actions">
+                  <button className="secondary-action" type="button" onClick={() => onEdit(item, index)}>
+                    Edit
+                  </button>
+                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CalendarTable({
+  items,
+  onEdit,
+  onRemove,
+}: {
+  items: CalendarItem[];
+  onEdit: (item: CalendarItem, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No calendar events yet</h3>
+        <p>Add events to show important dates on the school website.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="data-table-wrap">
+      <table className="data-table calendar-table">
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={`${item.title}-${item.date}-${index}`}>
+              <td><strong>{item.title}</strong></td>
+              <td>{item.date}</td>
+              <td>
+                <div className="table-actions">
+                  <button className="secondary-action" type="button" onClick={() => onEdit(item, index)}>
+                    Edit
+                  </button>
+                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SubjectTable({
+  subjects,
+  subjectClasses,
+  onEdit,
+  onRemove,
+}: {
+  subjects: Subject[];
+  subjectClasses: SubjectClass[];
+  onEdit: (item: Subject, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (subjects.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No subjects yet</h3>
+        <p>Add subjects before creating subject classes.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="data-table-wrap">
+      <table className="data-table subject-table">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Abbreviation</th>
+            <th>Color</th>
+            <th>Subject classes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {subjects.map((subject, index) => (
+            <tr key={subject.id}>
+              <td>
+                <strong>{subject.name}</strong>
+                <span>{subject.id}</span>
+              </td>
+              <td>{subject.abbreviation}</td>
+              <td>
+                <span className="table-color-swatch" style={{ background: subject.color }} />
+                {subject.color}
+              </td>
+              <td>{subjectClasses.filter((subjectClass) => subjectClass.subjectId === subject.id).length}</td>
+              <td>
+                <div className="table-actions">
+                  <button className="secondary-action" type="button" onClick={() => onEdit(subject, index)}>
+                    Edit
+                  </button>
+                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SubjectColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="field-label subject-color-field">
+      <span>Subject color</span>
+      <div className="subject-color-options">
+        {subjectColorOptions.map((color) => (
+          <button
+            className={value === color ? "active-subject-color" : ""}
+            key={color}
+            type="button"
+            onClick={() => onChange(color)}
+            style={{ "--subject-color": color } as React.CSSProperties}
+            aria-label={`Select ${color}`}
+          >
+            <span />
+          </button>
+        ))}
+      </div>
+      <div className="subject-color-selected">
+        <span style={{ background: value }} />
+        <strong>{value}</strong>
+      </div>
+    </div>
+  );
+}
+
+function SubjectClassWorkTable({
+  subjectClasses,
+  subjects,
+  classes,
+  students,
+  onOpen,
+}: {
+  subjectClasses: SubjectClass[];
+  subjects: Subject[];
+  classes: ClassGroup[];
+  students: Student[];
+  onOpen: (subjectClassId: string) => void;
+}) {
+  if (subjectClasses.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No subject classes available</h3>
+        <p>Admins can access all subject classes. Teachers see subject classes where their staff email matches the assigned teacher.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="school-work-card-grid">
+      {subjectClasses.map((subjectClass) => {
+        const subject = subjects.find((item) => item.id === subjectClass.subjectId);
+        const mainClass = classes.find((item) => item.id === subjectClass.baseClassId);
+        const studentCount = students.filter((student) => subjectClass.studentIds.includes(student.id)).length;
+        return (
+          <button className="school-work-card" key={subjectClass.id} type="button" onClick={() => onOpen(subjectClass.id)}>
+            <span className="subject-card-color" style={{ background: subject?.color ?? "#1f6857" }} />
+            <strong>{subject?.name ?? subjectClass.name}</strong>
+            <span>{subjectClass.teacherName || "No teacher assigned"}</span>
+            <span>{mainClass ? `${mainClass.name}${mainClass.grade ? ` · Grade ${mainClass.grade}` : ""}` : "Mixed classes"}</span>
+            <small>{studentCount} student{studentCount === 1 ? "" : "s"} · {subjectClass.courseMaterials?.length ?? 0} materials · {subjectClass.assignments?.length ?? 0} assignments</small>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SubjectClassWorkPage({
+  subjectClass,
+  subjects,
+  students,
+  onBack,
+  onChange,
+}: {
+  subjectClass: SubjectClass | null;
+  subjects: Subject[];
+  students: Student[];
+  onBack: () => void;
+  onChange: (subjectClass: SubjectClass) => void;
+}) {
+  const [materialStatus, setMaterialStatus] = useState(`Upload files up to ${MAX_MATERIAL_UPLOAD_LABEL}.`);
+
+  if (!subjectClass) {
+    return (
+      <div className="empty-editor-state">
+        <h3>Subject class not found</h3>
+        <button className="secondary-action" type="button" onClick={onBack}>Back</button>
+      </div>
+    );
+  }
+
+  const subject = subjects.find((item) => item.id === subjectClass.subjectId);
+  const materials = subjectClass.courseMaterials ?? [];
+  const assignments = subjectClass.assignments ?? [];
+  const addMaterial = async (file: File | undefined) => {
+    if (!file) {
+      return;
+    }
+    setMaterialStatus("Preparing material...");
+    try {
+      const fileDataUrl = await prepareCourseMaterialUpload(file);
+      onChange({
+        ...subjectClass,
+        courseMaterials: [...materials, {
+          id: `material-${Date.now()}`,
+          title: file.name.replace(/\.[^.]+$/, ""),
+          fileName: file.name,
+          fileType: file.type || "application/octet-stream",
+          fileDataUrl,
+          uploadedAt: new Date().toISOString(),
+        }],
+      });
+      setMaterialStatus("Material ready. Save changes to publish it.");
+    } catch (error) {
+      setMaterialStatus(error instanceof Error ? error.message : "Could not prepare this material.");
+    }
+  };
+
+  return (
+    <div className="school-work-page">
+      <div className="editor-back-row">
+        <button className="secondary-action" type="button" onClick={onBack}>Back to subject classes</button>
+      </div>
+      <div className="subject-work-heading">
+        <div>
+          <p className="eyebrow">{subject?.name ?? "Subject class"}</p>
+          <h2>{subjectClass.name}</h2>
+          <p>{subjectClass.teacherName || "No teacher assigned"} · {students.filter((student) => subjectClass.studentIds.includes(student.id)).length} students</p>
+        </div>
+      </div>
+      <section className="sub-editor-panel">
+        <h3>Course materials</h3>
+        <label className="field-label">
+          Upload material
+          <input type="file" onChange={(event) => void addMaterial(event.target.files?.[0])} />
+        </label>
+        <p className="form-status">{materialStatus}</p>
+        <div className="data-table-wrap">
+          <table className="data-table materials-table">
+            <thead>
+              <tr>
+                <th>Material</th>
+                <th>File</th>
+                <th>Uploaded</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {materials.length === 0 ? (
+                <tr><td colSpan={4}>No course materials yet.</td></tr>
+              ) : materials.map((material) => (
+                <tr key={material.id}>
+                  <td><strong>{material.title}</strong></td>
+                  <td>{material.fileName}</td>
+                  <td>{formatDate(material.uploadedAt)}</td>
+                  <td>
+                    <button className="remove-button" type="button" onClick={() => onChange({ ...subjectClass, courseMaterials: materials.filter((item) => item.id !== material.id) })}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="sub-editor-panel">
+        <h3>Assignments</h3>
+        <button
+          className="secondary-action repeater-add-button"
+          type="button"
+          onClick={() => onChange({
+            ...subjectClass,
+            assignments: [...assignments, { id: `assignment-${Date.now()}`, title: "New assignment", dueDate: "", description: "" }],
+          })}
+        >
+          Add assignment
+        </button>
+        <div className="repeater">
+          {assignments.map((assignment) => (
+            <div className="repeater-item" key={assignment.id}>
+              <TextInput label="Assignment title" value={assignment.title} onChange={(title) => onChange({ ...subjectClass, assignments: assignments.map((item) => item.id === assignment.id ? { ...item, title } : item) })} />
+              <TextInput label="Due date" value={assignment.dueDate ?? ""} onChange={(dueDate) => onChange({ ...subjectClass, assignments: assignments.map((item) => item.id === assignment.id ? { ...item, dueDate } : item) })} />
+              <TextArea label="Instructions" value={assignment.description} onChange={(description) => onChange({ ...subjectClass, assignments: assignments.map((item) => item.id === assignment.id ? { ...item, description } : item) })} />
+              <button className="remove-button" type="button" onClick={() => onChange({ ...subjectClass, assignments: assignments.filter((item) => item.id !== assignment.id) })}>
+                Remove assignment
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1966,6 +3007,18 @@ function canManageSchool(profile: AdminProfile | null, schoolId: string, userEma
 
   const normalizedEmail = userEmail?.toLowerCase();
   return Boolean(normalizedEmail && school?.adminEmails?.map((adminEmail) => adminEmail.toLowerCase()).includes(normalizedEmail));
+}
+
+function canTeachAnySubjectClass(school: School, userEmail?: string | null) {
+  return (school.subjectClasses ?? []).some((subjectClass) => canTeachSubjectClass(school, subjectClass, userEmail));
+}
+
+function canTeachSubjectClass(school: School, subjectClass: SubjectClass, userEmail?: string | null) {
+  const normalizedEmail = userEmail?.toLowerCase();
+  if (!normalizedEmail || !subjectClass.teacherName) {
+    return false;
+  }
+  return school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && member.name === subjectClass.teacherName);
 }
 
 function isVisibleOnHomePage(member: StaffMember) {
@@ -2000,6 +3053,22 @@ function buildAboutPageGroups(school: School, globalAbout: GlobalAboutConfig) {
 
 function getNewsSlug(item: NewsItem) {
   return item.slug || slugifySchoolName(item.title);
+}
+
+function getCachedSchool(schoolId: string) {
+  const localSchool = getLocalSchool(schoolId);
+  if (localSchool) {
+    schoolCache.set(schoolId, localSchool);
+    return localSchool;
+  }
+  return schoolCache.get(schoolId) ?? null;
+}
+
+async function loadSchoolForPublicPage(schoolId: string, setSchool: (school: School) => void) {
+  const remoteSchool = await getSchool(schoolId);
+  const nextSchool = getLocalSchool(schoolId) ?? remoteSchool;
+  schoolCache.set(schoolId, nextSchool);
+  setSchool(nextSchool);
 }
 
 function getTextExcerpt(html: string, maxLength: number) {
@@ -2151,17 +3220,30 @@ function CheckboxGroup({
   options,
   values,
   onChange,
+  allowSelectAll = false,
 }: {
   label: string;
   options: Array<{ value: string; label: string }>;
   values: string[];
   onChange: (values: string[]) => void;
+  allowSelectAll?: boolean;
 }) {
   const valueSet = new Set(values);
+  const optionValues = options.map((option) => option.value);
+  const allSelected = optionValues.length > 0 && optionValues.every((value) => valueSet.has(value));
 
   return (
     <fieldset className="checkbox-group">
       <legend>{label}</legend>
+      {allowSelectAll ? (
+        <div className="checkbox-group-actions">
+          <CheckboxInput
+            label="Select all"
+            checked={allSelected}
+            onChange={(checked) => onChange(checked ? mergeUnique([...values, ...optionValues]) : values.filter((value) => !optionValues.includes(value)))}
+          />
+        </div>
+      ) : null}
       <div>
         {options.map((option) => (
           <CheckboxInput
@@ -2273,39 +3355,47 @@ function RegistrationModal({
   );
 }
 
-function StaffImageUpload({ photoUrl, onChange }: { photoUrl: string; onChange: (photoUrl: string) => void }) {
-  const [status, setStatus] = useState("Recommended: square image, at least 400 x 400px.");
+function ImageUpload({
+  label,
+  value,
+  onChange,
+  variant = "wide",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  variant?: "wide" | "square" | "hero";
+}) {
+  const [status, setStatus] = useState(`Choose an image up to ${MAX_IMAGE_UPLOAD_LABEL}.`);
 
   const uploadImage = async (file: File | undefined) => {
     if (!file) {
       return;
     }
-    if (!file.type.startsWith("image/")) {
-      setStatus("Choose an image file.");
-      return;
-    }
 
     setStatus("Preparing image...");
     try {
-      const nextPhotoUrl = await resizeImageForFirestore(file);
-      onChange(nextPhotoUrl);
-      setStatus("Image ready. Save the school to store it in Firestore.");
-    } catch {
-      setStatus("Could not prepare this image.");
+      const nextImage = await prepareImageUpload(file, variant === "square"
+        ? { cropSquare: true, maxWidth: 512, maxHeight: 512, quality: 0.82 }
+        : { maxWidth: 1600, maxHeight: 900, quality: 0.84 });
+      onChange(nextImage);
+      setStatus("Image ready. Save changes to publish it.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not prepare this image.");
     }
   };
 
   return (
-    <div className="field-label staff-image-field">
-      <span>Staff image</span>
-      <div className="staff-image-control">
-        <div className="staff-image-preview">
-          {photoUrl ? <img src={photoUrl} alt="" /> : <UserRound size={24} />}
+    <div className="field-label image-upload-field">
+      <span>{label}</span>
+      <div className="image-upload-control">
+        <div className={`image-upload-preview ${variant === "square" ? "square-image-preview" : ""} ${variant === "hero" ? "hero-image-preview" : ""}`}>
+          {value ? <img src={value} alt="" /> : <ImagePlus size={24} />}
         </div>
         <div>
           <input type="file" accept="image/*" onChange={(event) => void uploadImage(event.target.files?.[0])} />
           <p>{status}</p>
-          {photoUrl ? (
+          {value ? (
             <button className="remove-button" type="button" onClick={() => onChange("")}>
               Remove image
             </button>
@@ -2316,8 +3406,14 @@ function StaffImageUpload({ photoUrl, onChange }: { photoUrl: string; onChange: 
   );
 }
 
+function StaffImageUpload({ photoUrl, onChange }: { photoUrl: string; onChange: (photoUrl: string) => void }) {
+  return <ImageUpload label="Staff image" value={photoUrl} onChange={onChange} variant="square" />;
+}
+
 function RichTextEditor({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [imageStatus, setImageStatus] = useState("");
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -2337,16 +3433,18 @@ function RichTextEditor({ label, value, onChange }: { label: string; value: stri
     syncValue();
   };
 
-  const insertImage = () => {
-    const imageUrl = window.prompt("Image URL");
-    if (!imageUrl?.trim()) {
+  const insertImage = async (file: File | undefined) => {
+    if (!file) {
       return;
     }
-    const altText = window.prompt("Image description") ?? "";
-    runCommand(
-      "insertHTML",
-      `<figure><img src="${escapeHtmlAttribute(imageUrl.trim())}" alt="${escapeHtmlAttribute(altText.trim())}" /></figure><p><br></p>`,
-    );
+    setImageStatus("Preparing image...");
+    try {
+      const imageUrl = await prepareImageUpload(file, { maxWidth: 1200, maxHeight: 900, quality: 0.84 });
+      runCommand("insertHTML", `<figure><img src="${escapeHtmlAttribute(imageUrl)}" alt="" /></figure><p><br></p>`);
+      setImageStatus("Image inserted.");
+    } catch (error) {
+      setImageStatus(error instanceof Error ? error.message : "Could not prepare this image.");
+    }
   };
 
   return (
@@ -2374,10 +3472,21 @@ function RichTextEditor({ label, value, onChange }: { label: string; value: stri
         <button type="button" onClick={() => runCommand("formatBlock", "p")} title="Paragraph">
           P
         </button>
-        <button type="button" onClick={insertImage} title="Image">
+        <button type="button" onClick={() => imageInputRef.current?.click()} title="Image">
           <ImagePlus size={18} />
         </button>
+        <input
+          ref={imageInputRef}
+          className="rich-text-image-input"
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            void insertImage(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
       </div>
+      {imageStatus ? <p className="rich-text-status">{imageStatus}</p> : null}
       <div
         ref={editorRef}
         className="rich-text-editor"
@@ -2420,8 +3529,30 @@ function escapeHtmlAttribute(value: string) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function resizeImageForFirestore(file: File) {
+function prepareImageUpload(
+  file: File,
+  {
+    maxWidth,
+    maxHeight,
+    quality,
+    cropSquare = false,
+  }: {
+    maxWidth: number;
+    maxHeight: number;
+    quality: number;
+    cropSquare?: boolean;
+  },
+) {
   return new Promise<string>((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Choose an image file."));
+      return;
+    }
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+      reject(new Error(`Image must be ${MAX_IMAGE_UPLOAD_LABEL} or smaller.`));
+      return;
+    }
+
     const reader = new FileReader();
 
     reader.onerror = () => reject(new Error("Could not read image"));
@@ -2429,7 +3560,6 @@ function resizeImageForFirestore(file: File) {
       const image = new Image();
       image.onerror = () => reject(new Error("Could not load image"));
       image.onload = () => {
-        const size = 512;
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d");
 
@@ -2438,15 +3568,27 @@ function resizeImageForFirestore(file: File) {
           return;
         }
 
-        canvas.width = size;
-        canvas.height = size;
+        if (cropSquare) {
+          const size = Math.min(maxWidth, maxHeight);
+          const sourceSize = Math.min(image.width, image.height);
+          const sourceX = (image.width - sourceSize) / 2;
+          const sourceY = (image.height - sourceSize) / 2;
 
-        const sourceSize = Math.min(image.width, image.height);
-        const sourceX = (image.width - sourceSize) / 2;
-        const sourceY = (image.height - sourceSize) / 2;
+          canvas.width = size;
+          canvas.height = size;
+          context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+          return;
+        }
 
-        context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
-        resolve(canvas.toDataURL("image/jpeg", 0.82));
+        const scale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
+        const targetWidth = Math.max(1, Math.round(image.width * scale));
+        const targetHeight = Math.max(1, Math.round(image.height * scale));
+
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        context.drawImage(image, 0, 0, targetWidth, targetHeight);
+        resolve(canvas.toDataURL("image/jpeg", quality));
       };
       image.src = String(reader.result);
     };
@@ -2455,7 +3597,21 @@ function resizeImageForFirestore(file: File) {
   });
 }
 
-function Repeater<T extends NewsItem | CalendarItem | StaffMember | ClassGroup | Student | Subject | AboutCategory | AboutPage | GlobalAboutPage>({
+function prepareCourseMaterialUpload(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    if (file.size > MAX_MATERIAL_UPLOAD_BYTES) {
+      reject(new Error(`Material must be ${MAX_MATERIAL_UPLOAD_LABEL} or smaller.`));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read this file."));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+}
+
+function Repeater<T extends NewsItem | CalendarItem | StaffMember | ClassGroup | Student | Subject | SubjectClass | AboutCategory | AboutPage | GlobalAboutPage>({
   items,
   onChange,
   renderItem,
@@ -2502,9 +3658,44 @@ function SchoolMiniPreview() {
 function LoadingScreen() {
   return (
     <main className="loading-screen">
+      <LoadingContent />
+    </main>
+  );
+}
+
+function SchoolWebsiteHiddenRedirect() {
+  useEffect(() => {
+    navigate("/login");
+  }, []);
+
+  return <LoadingScreen />;
+}
+
+function shouldShowPublicSchoolWebsite(school: School) {
+  return school.showWebsite !== false;
+}
+
+function SchoolLoadingPage({ school, currentPage }: { school: School; currentPage?: string }) {
+  const mainColor = school.mainColor || "#18322e";
+  const subColor = school.subColor || "#e0b44f";
+
+  return (
+    <main className="school-page" style={{ "--school-main": mainColor, "--school-sub": subColor } as React.CSSProperties}>
+      <SchoolHeader school={school} currentPage={currentPage} />
+      <section className="school-loading-section">
+        <LoadingContent />
+      </section>
+      <SchoolFooter school={school} />
+    </main>
+  );
+}
+
+function LoadingContent() {
+  return (
+    <div className="loading-content">
       <GraduationCap size={36} />
       <p>Loading school page...</p>
-    </main>
+    </div>
   );
 }
 

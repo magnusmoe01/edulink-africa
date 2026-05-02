@@ -54,9 +54,38 @@ export type Guardian = {
 export type Subject = {
   id: string;
   name: string;
-  teacherName: string;
-  classIds: string[];
+  abbreviation: string;
+  color: string;
+  teacherName?: string;
+  classIds?: string[];
+  studentIds?: string[];
+};
+
+export type SubjectClass = {
+  id: string;
+  name: string;
+  subjectId: string;
+  baseClassId?: string;
+  teacherName?: string;
   studentIds: string[];
+  courseMaterials?: CourseMaterial[];
+  assignments?: Assignment[];
+};
+
+export type CourseMaterial = {
+  id: string;
+  title: string;
+  fileName: string;
+  fileType: string;
+  fileDataUrl: string;
+  uploadedAt: string;
+};
+
+export type Assignment = {
+  id: string;
+  title: string;
+  dueDate?: string;
+  description: string;
 };
 
 export type AboutCategory = {
@@ -85,6 +114,7 @@ export type School = {
   email: string;
   adminEmails: string[];
   principal: string;
+  showWebsite?: boolean;
   heroImage: string;
   logoUrl?: string;
   mainColor?: string;
@@ -97,6 +127,7 @@ export type School = {
   classes: ClassGroup[];
   students: Student[];
   subjects: Subject[];
+  subjectClasses?: SubjectClass[];
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
   updatedAt?: string;

@@ -12,6 +12,7 @@ export const sampleSchool: School = {
   email: "office@nairobi-community.example",
   adminEmails: ["admin@nairobi-community.example"],
   principal: "Amina Okoth",
+  showWebsite: true,
   heroImage:
     "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=1600&q=80",
   mainColor: "#18322e",
@@ -85,6 +86,26 @@ export const sampleSchool: School = {
       classId: "grade-1",
       guardianName: "Joseph Achieng",
       guardianEmail: "joseph.achieng@example.com",
+    },
+  ],
+  subjects: [
+    {
+      id: "math",
+      name: "Mathematics",
+      abbreviation: "MATH",
+      color: "#2f6fbb",
+    },
+  ],
+  subjectClasses: [
+    {
+      id: "math-grade-1",
+      name: "Math - Grade 1",
+      subjectId: "math",
+      baseClassId: "grade-1",
+      teacherName: "Grace Wanjiku",
+      studentIds: ["student-001"],
+      courseMaterials: [],
+      assignments: [],
     },
   ],
   aboutCategories: [
