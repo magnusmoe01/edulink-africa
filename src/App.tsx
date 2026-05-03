@@ -4,23 +4,29 @@ import {
   Bold,
   CalendarDays,
   ChevronRight,
+  FileText,
+  Folder,
   Globe2,
   GraduationCap,
   Heading2,
+  Image,
   ImagePlus,
   Italic,
   LayoutDashboard,
+  Link2,
   List,
   ListOrdered,
   LogIn,
   Mail,
   MapPin,
   Phone,
+  Plus,
   Quote,
   Search,
   Save,
   School as SchoolIcon,
   ShieldCheck,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import { sampleSchool } from "./data/sampleSchool";
@@ -38,15 +44,13 @@ import {
 } from "./lib/schools";
 import { hasFirebaseConfig } from "./lib/firebase";
 import { auth } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, Guardian, NewsItem, School, StaffMember, Student, Subject, SubjectClass } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, Guardian, NewsItem, ResourceFolder, School, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
 
 type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "classes" | "subjects" | "students" | "schoolWork";
 type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork";
 
 const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
 const MAX_IMAGE_UPLOAD_LABEL = "1MB";
-const MAX_MATERIAL_UPLOAD_BYTES = 1024 * 1024;
-const MAX_MATERIAL_UPLOAD_LABEL = "1MB";
 const schoolCache = new Map<string, School>();
 let globalAboutCache: GlobalAboutConfig | null = null;
 const subjectColorOptions = [
@@ -1768,6 +1772,8 @@ function SchoolEditor({
   ];
   const defaultAboutCategoryId = aboutCategories[0]?.id ?? globalCategories[0]?.id ?? "";
   const activeCategoryInfo = editorCategories.find((category) => category.id === activeCategory) ?? editorCategories[0];
+  const isSchoolWorkPage = activeSection === "schoolWork" || (activeCategory === "schoolWork" && !activeSection);
+  const showSchoolWorkOverview = isSchoolWorkPage && !activeWorkSubjectClassId;
 
   return (
     <form
@@ -1778,15 +1784,24 @@ function SchoolEditor({
       }}
     >
       <div className="editor-grid">
-        {!activeSection ? (
+        {!activeSection && activeCategory !== "schoolWork" ? (
           <EditorSectionCards category={activeCategoryInfo} onSelect={onSectionChange} />
-        ) : (
+        ) : activeSection && activeSection !== "schoolWork" ? (
           <div className="editor-back-row">
             <button className="secondary-action" type="button" onClick={onBack}>
               Back
             </button>
           </div>
-        )}
+        ) : null}
+        {showSchoolWorkOverview ? (
+          <SchoolWorkOverview
+            subjectClasses={accessibleSubjectClasses}
+            subjects={subjects}
+            classes={classes}
+            students={students}
+            onOpen={(subjectClassId) => setActiveWorkSubjectClassId(subjectClassId)}
+          />
+        ) : null}
         {activeSection === "profile" ? (
           <EditorPanel title="School profile">
             <TextInput label="URL slug" value={school.id} onChange={(value) => setField("id", slugifySchoolName(value))} />
@@ -2244,26 +2259,16 @@ function SchoolEditor({
           </EditorPanel>
         ) : null}
 
-        {activeSection === "schoolWork" ? (
-          <EditorPanel title="School work">
-            {activeWorkSubjectClassId ? (
-              <SubjectClassWorkPage
-                subjectClass={subjectClasses.find((item) => item.id === activeWorkSubjectClassId) ?? null}
-                subjects={subjects}
-                students={students}
-                onBack={() => setActiveWorkSubjectClassId(null)}
-                onChange={(nextSubjectClass) => setField("subjectClasses", subjectClasses.map((item) => item.id === nextSubjectClass.id ? nextSubjectClass : item))}
-              />
-            ) : (
-              <SubjectClassWorkTable
-                subjectClasses={accessibleSubjectClasses}
-                subjects={subjects}
-                classes={classes}
-                students={students}
-                onOpen={(subjectClassId) => setActiveWorkSubjectClassId(subjectClassId)}
-              />
-            )}
-          </EditorPanel>
+        {isSchoolWorkPage && activeWorkSubjectClassId ? (
+          <div className="school-work-detail-shell">
+            <SubjectClassWorkPage
+              subjectClass={subjectClasses.find((item) => item.id === activeWorkSubjectClassId) ?? null}
+              subjects={subjects}
+              students={students}
+              onBack={() => setActiveWorkSubjectClassId(null)}
+              onChange={(nextSubjectClass) => setField("subjectClasses", subjectClasses.map((item) => item.id === nextSubjectClass.id ? nextSubjectClass : item))}
+            />
+          </div>
         ) : null}
 
         {activeSection === "students" ? (
@@ -2830,7 +2835,7 @@ function SubjectColorPicker({ value, onChange }: { value: string; onChange: (val
   );
 }
 
-function SubjectClassWorkTable({
+function SchoolWorkOverview({
   subjectClasses,
   subjects,
   classes,
@@ -2859,12 +2864,17 @@ function SubjectClassWorkTable({
         const mainClass = classes.find((item) => item.id === subjectClass.baseClassId);
         const studentCount = students.filter((student) => subjectClass.studentIds.includes(student.id)).length;
         return (
-          <button className="school-work-card" key={subjectClass.id} type="button" onClick={() => onOpen(subjectClass.id)}>
-            <span className="subject-card-color" style={{ background: subject?.color ?? "#1f6857" }} />
+          <button
+            className="school-work-card"
+            key={subjectClass.id}
+            type="button"
+            onClick={() => onOpen(subjectClass.id)}
+            style={{ "--subject-card-color": subject?.color ?? "#1f6857" } as React.CSSProperties}
+          >
             <strong>{subject?.name ?? subjectClass.name}</strong>
             <span>{subjectClass.teacherName || "No teacher assigned"}</span>
             <span>{mainClass ? `${mainClass.name}${mainClass.grade ? ` · Grade ${mainClass.grade}` : ""}` : "Mixed classes"}</span>
-            <small>{studentCount} student{studentCount === 1 ? "" : "s"} · {subjectClass.courseMaterials?.length ?? 0} materials · {subjectClass.assignments?.length ?? 0} assignments</small>
+            <small>{studentCount} student{studentCount === 1 ? "" : "s"} · {subjectClass.resourceFolders?.length ?? 0} folders · {subjectClass.resources?.length ?? 0} resources</small>
           </button>
         );
       })}
@@ -2885,7 +2895,33 @@ function SubjectClassWorkPage({
   onBack: () => void;
   onChange: (subjectClass: SubjectClass) => void;
 }) {
-  const [materialStatus, setMaterialStatus] = useState(`Upload files up to ${MAX_MATERIAL_UPLOAD_LABEL}.`);
+  const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "students">("resources");
+  const [selectedFolderId, setSelectedFolderId] = useState("root");
+  const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
+  const [showFolderResourcePicker, setShowFolderResourcePicker] = useState(false);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set(["root"]));
+  const [dragTargetFolderId, setDragTargetFolderId] = useState<string | null>(null);
+  const [draftAnnouncement, setDraftAnnouncement] = useState<Pick<SubjectClassAnnouncement, "title" | "body">>({ title: "", body: "" });
+  const committedResources = useMemo(() => subjectClass?.resources ?? [], [subjectClass?.resources]);
+  const committedResourceSignature = useMemo(() => JSON.stringify(committedResources), [committedResources]);
+  const pendingResourceSaveSignature = useRef<string | null>(null);
+  const [draftResources, setDraftResources] = useState<SubjectResource[]>(committedResources);
+  const [hasUnsavedResourceChanges, setHasUnsavedResourceChanges] = useState(false);
+
+  useEffect(() => {
+    if (hasUnsavedResourceChanges) {
+      return;
+    }
+
+    if (pendingResourceSaveSignature.current && pendingResourceSaveSignature.current !== committedResourceSignature) {
+      return;
+    }
+
+    pendingResourceSaveSignature.current = null;
+    setDraftResources(committedResources);
+  }, [committedResources, committedResourceSignature, hasUnsavedResourceChanges]);
 
   if (!subjectClass) {
     return (
@@ -2897,30 +2933,292 @@ function SubjectClassWorkPage({
   }
 
   const subject = subjects.find((item) => item.id === subjectClass.subjectId);
-  const materials = subjectClass.courseMaterials ?? [];
-  const assignments = subjectClass.assignments ?? [];
-  const addMaterial = async (file: File | undefined) => {
+  const announcements = subjectClass.announcements ?? [];
+  const subjectClassStudents = students.filter((student) => subjectClass.studentIds.includes(student.id));
+  const folders = subjectClass.resourceFolders ?? [];
+  const resources = draftResources;
+  const activeFolderId = selectedFolderId === "root" ? undefined : selectedFolderId;
+  const activeFolder = folders.find((folder) => folder.id === activeFolderId);
+  const selectedResource = resources.find((resource) => resource.id === selectedResourceId) ?? null;
+  const selectedTreeFolderId = selectedResource ? (selectedResource.folderId ?? "root") : activeFolder ? activeFolder.id : "root";
+  const childFolders = folders.filter((folder) => (folder.parentId ?? "root") === selectedTreeFolderId);
+  const folderResources = resources.filter((resource) => (resource.folderId ?? "root") === selectedTreeFolderId);
+  const updateFolders = (nextFolders: ResourceFolder[]) => onChange({ ...subjectClass, resourceFolders: nextFolders });
+  const updateResources = (nextResources: SubjectResource[]) => onChange({ ...subjectClass, resources: nextResources });
+  const postAnnouncement = () => {
+    if (!draftAnnouncement.title.trim() && !draftAnnouncement.body.trim()) {
+      return;
+    }
+    onChange({
+      ...subjectClass,
+      announcements: [{
+        id: `subject-announcement-${Date.now()}`,
+        title: draftAnnouncement.title.trim() || "Announcement",
+        body: draftAnnouncement.body.trim(),
+        createdAt: new Date().toISOString(),
+      }, ...announcements],
+    });
+    setDraftAnnouncement({ title: "", body: "" });
+  };
+  const removeAnnouncement = (announcementId: string) => {
+    onChange({ ...subjectClass, announcements: announcements.filter((announcement) => announcement.id !== announcementId) });
+  };
+  const selectTreeFolder = (folderId: string) => {
+    setSelectedFolderId(folderId);
+    setSelectedResourceId(null);
+    setEditingFolderId(null);
+    setEditingResourceId(null);
+    setShowFolderResourcePicker(false);
+    setExpandedFolderIds((current) => new Set(current).add(folderId));
+  };
+  const selectResource = (resource: SubjectResource) => {
+    setSelectedFolderId(resource.folderId ?? "root");
+    setSelectedResourceId(resource.id);
+    setEditingFolderId(null);
+    setEditingResourceId(null);
+    setShowFolderResourcePicker(false);
+  };
+  const toggleTreeFolder = (folderId: string) => {
+    setExpandedFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
+  const saveResourceChanges = () => {
+    pendingResourceSaveSignature.current = JSON.stringify(draftResources);
+    setDraftResources(draftResources);
+    updateResources(draftResources);
+    setHasUnsavedResourceChanges(false);
+    setEditingResourceId(null);
+  };
+  const addFolder = () => {
+    const folder: ResourceFolder = {
+      id: `folder-${Date.now()}`,
+      name: "New folder",
+      ...(activeFolderId ? { parentId: activeFolderId } : {}),
+    };
+    updateFolders([...folders, folder]);
+    setSelectedFolderId(folder.id);
+    setShowFolderResourcePicker(false);
+  };
+  const addResource = (type: SubjectResource["type"]) => {
+    const resource: SubjectResource = {
+      id: `resource-${type}-${Date.now()}`,
+      type,
+      title: type === "note" ? "New note" : type === "link" ? "New link" : "New picture",
+      createdAt: new Date().toISOString(),
+      ...(activeFolderId ? { folderId: activeFolderId } : {}),
+      ...(type === "note" ? { body: "" } : type === "link" ? { url: "https://" } : { imageDataUrl: "", description: "" }),
+    };
+    const nextResources = [...committedResources, resource];
+    updateResources(nextResources);
+    setDraftResources(nextResources);
+    setHasUnsavedResourceChanges(false);
+    setShowFolderResourcePicker(false);
+  };
+  const updateResource = (resourceId: string, patch: Partial<SubjectResource>) => {
+    setDraftResources(resources.map((resource) => resource.id === resourceId ? { ...resource, ...patch } : resource));
+    setHasUnsavedResourceChanges(true);
+  };
+  const uploadPictureResourceImage = async (resourceId: string, file: File | undefined) => {
     if (!file) {
       return;
     }
-    setMaterialStatus("Preparing material...");
-    try {
-      const fileDataUrl = await prepareCourseMaterialUpload(file);
-      onChange({
-        ...subjectClass,
-        courseMaterials: [...materials, {
-          id: `material-${Date.now()}`,
-          title: file.name.replace(/\.[^.]+$/, ""),
-          fileName: file.name,
-          fileType: file.type || "application/octet-stream",
-          fileDataUrl,
-          uploadedAt: new Date().toISOString(),
-        }],
+    const imageDataUrl = await prepareImageUpload(file, { maxWidth: 1200, maxHeight: 900, quality: 0.84 });
+    updateResource(resourceId, { imageDataUrl });
+  };
+  const removeFolder = (folderId: string) => {
+    const idsToRemove = new Set<string>([folderId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      folders.forEach((folder) => {
+        if (folder.parentId && idsToRemove.has(folder.parentId) && !idsToRemove.has(folder.id)) {
+          idsToRemove.add(folder.id);
+          changed = true;
+        }
       });
-      setMaterialStatus("Material ready. Save changes to publish it.");
-    } catch (error) {
-      setMaterialStatus(error instanceof Error ? error.message : "Could not prepare this material.");
     }
+    updateFolders(folders.filter((folder) => !idsToRemove.has(folder.id)));
+    const nextResources = committedResources.filter((resource) => !resource.folderId || !idsToRemove.has(resource.folderId));
+    updateResources(nextResources);
+    setDraftResources(nextResources);
+    setHasUnsavedResourceChanges(false);
+    setSelectedFolderId("root");
+    setShowFolderResourcePicker(false);
+  };
+  const removeResource = (resourceId: string) => {
+    const nextResources = committedResources.filter((resource) => resource.id !== resourceId);
+    updateResources(nextResources);
+    setDraftResources(nextResources);
+    setHasUnsavedResourceChanges(false);
+    setShowFolderResourcePicker(false);
+  };
+  const moveResourceToFolder = (resourceId: string, folderId: string) => {
+    const nextFolderId = folderId === "root" ? undefined : folderId;
+    const nextCommittedResources = committedResources.map((resource) => {
+      if (resource.id !== resourceId) {
+        return resource;
+      }
+      const { folderId: _previousFolderId, ...resourceWithoutFolder } = resource;
+      return nextFolderId ? { ...resourceWithoutFolder, folderId: nextFolderId } : resourceWithoutFolder;
+    });
+    const nextDraftResources = resources.map((resource) => {
+      if (resource.id !== resourceId) {
+        return resource;
+      }
+      const { folderId: _previousFolderId, ...resourceWithoutFolder } = resource;
+      return nextFolderId ? { ...resourceWithoutFolder, folderId: nextFolderId } : resourceWithoutFolder;
+    });
+    updateResources(nextCommittedResources);
+    setDraftResources(nextDraftResources);
+    if (selectedResourceId === resourceId) {
+      setSelectedFolderId(folderId);
+    }
+    setExpandedFolderIds((current) => new Set(current).add(folderId));
+    setDragTargetFolderId(null);
+  };
+  const resourceTypePicker = (
+    <div className="resource-type-grid">
+      <button className="resource-type-card" type="button" onClick={addFolder}>
+        <Folder size={34} />
+        <span>
+          <strong>Folder</strong>
+          <small>Organise content into a course structure.</small>
+        </span>
+      </button>
+      <button className="resource-type-card" type="button" onClick={() => addResource("note")}>
+        <FileText size={34} />
+        <span>
+          <strong>Note</strong>
+          <small>Create simple text notes for learners.</small>
+        </span>
+      </button>
+      <button className="resource-type-card" type="button" onClick={() => addResource("link")}>
+        <Link2 size={34} />
+        <span>
+          <strong>Link</strong>
+          <small>Add an external learning resource.</small>
+        </span>
+      </button>
+      <button className="resource-type-card" type="button" onClick={() => addResource("picture")}>
+        <Image size={34} />
+        <span>
+          <strong>Picture with description</strong>
+          <small>Upload an image and add learner-facing context.</small>
+        </span>
+      </button>
+    </div>
+  );
+  const handleFolderDragOver = (event: React.DragEvent, folderId: string) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragTargetFolderId(folderId);
+  };
+  const handleFolderDrop = (event: React.DragEvent, folderId: string) => {
+    event.preventDefault();
+    const resourceId = event.dataTransfer.getData("text/plain");
+    if (resourceId) {
+      moveResourceToFolder(resourceId, folderId);
+    }
+  };
+  const renderResourceTree = (parentId: string, depth = 0): React.ReactNode => {
+    const children = folders.filter((folder) => (folder.parentId ?? "root") === parentId);
+    const childResources = resources.filter((resource) => (resource.folderId ?? "root") === parentId);
+    const isExpanded = expandedFolderIds.has(parentId);
+    return (
+      <>
+        {isExpanded ? (
+          <>
+            {children.map((folder) => {
+              const folderIsExpanded = expandedFolderIds.has(folder.id);
+              const folderHasChildren = folders.some((childFolder) => (childFolder.parentId ?? "root") === folder.id)
+                || resources.some((resource) => (resource.folderId ?? "root") === folder.id);
+              return (
+                <div key={folder.id}>
+                  <div
+                    className={[
+                      "resource-tree-item",
+                      !selectedResource && selectedFolderId === folder.id ? "active-resource-tree-item" : "",
+                      dragTargetFolderId === folder.id ? "active-resource-drop-target" : "",
+                    ].filter(Boolean).join(" ")}
+                    onDragLeave={() => setDragTargetFolderId(null)}
+                    onDragOver={(event) => handleFolderDragOver(event, folder.id)}
+                    onDrop={(event) => handleFolderDrop(event, folder.id)}
+                    style={{ "--tree-depth": depth } as React.CSSProperties}
+                  >
+                    <button
+                      className="resource-tree-toggle"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleTreeFolder(folder.id);
+                      }}
+                      aria-label={folderIsExpanded ? "Collapse folder" : "Expand folder"}
+                      disabled={!folderHasChildren}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                    <button className="resource-tree-label" type="button" onClick={() => selectTreeFolder(folder.id)}>
+                      <Folder size={16} />
+                      <span>{folder.name}</span>
+                    </button>
+                  </div>
+                  <div
+                    className="resource-tree-group"
+                    style={{ "--tree-depth": depth + 1 } as React.CSSProperties}
+                  >
+                    {renderResourceTree(folder.id, depth + 1)}
+                  </div>
+                </div>
+              );
+            })}
+            {childResources.map((resource) => (
+              <button
+                className={[
+                  "resource-tree-item resource-tree-resource",
+                  selectedResourceId === resource.id ? "active-resource-tree-item" : "",
+                ].filter(Boolean).join(" ")}
+                draggable
+                key={resource.id}
+                type="button"
+                onClick={() => selectResource(resource)}
+                onDragEnd={() => setDragTargetFolderId(null)}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", resource.id);
+                }}
+                style={{ "--tree-depth": depth } as React.CSSProperties}
+              >
+                <span className="resource-tree-spacer" />
+                {resource.type === "note" ? <FileText size={16} /> : <Link2 size={16} />}
+                <span>{resource.title}</span>
+              </button>
+            ))}
+            {parentId !== "root" || (children.length === 0 && childResources.length === 0) ? (
+              <button
+                className="resource-tree-item resource-tree-add-resource"
+                type="button"
+                onClick={() => {
+                  selectTreeFolder(parentId);
+                  setShowFolderResourcePicker(true);
+                }}
+                style={{ "--tree-depth": depth } as React.CSSProperties}
+              >
+                <span className="resource-tree-spacer" />
+                <Plus size={16} />
+                <span>Add resource</span>
+              </button>
+            ) : null}
+          </>
+        ) : null}
+      </>
+    );
   };
 
   return (
@@ -2928,74 +3226,288 @@ function SubjectClassWorkPage({
       <div className="editor-back-row">
         <button className="secondary-action" type="button" onClick={onBack}>Back to subject classes</button>
       </div>
-      <div className="subject-work-heading">
-        <div>
-          <p className="eyebrow">{subject?.name ?? "Subject class"}</p>
-          <h2>{subjectClass.name}</h2>
-          <p>{subjectClass.teacherName || "No teacher assigned"} · {students.filter((student) => subjectClass.studentIds.includes(student.id)).length} students</p>
-        </div>
-      </div>
-      <section className="sub-editor-panel">
-        <h3>Course materials</h3>
-        <label className="field-label">
-          Upload material
-          <input type="file" onChange={(event) => void addMaterial(event.target.files?.[0])} />
-        </label>
-        <p className="form-status">{materialStatus}</p>
-        <div className="data-table-wrap">
-          <table className="data-table materials-table">
-            <thead>
-              <tr>
-                <th>Material</th>
-                <th>File</th>
-                <th>Uploaded</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {materials.length === 0 ? (
-                <tr><td colSpan={4}>No course materials yet.</td></tr>
-              ) : materials.map((material) => (
-                <tr key={material.id}>
-                  <td><strong>{material.title}</strong></td>
-                  <td>{material.fileName}</td>
-                  <td>{formatDate(material.uploadedAt)}</td>
-                  <td>
-                    <button className="remove-button" type="button" onClick={() => onChange({ ...subjectClass, courseMaterials: materials.filter((item) => item.id !== material.id) })}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <section className="sub-editor-panel">
-        <h3>Assignments</h3>
-        <button
-          className="secondary-action repeater-add-button"
-          type="button"
-          onClick={() => onChange({
-            ...subjectClass,
-            assignments: [...assignments, { id: `assignment-${Date.now()}`, title: "New assignment", dueDate: "", description: "" }],
-          })}
-        >
-          Add assignment
-        </button>
-        <div className="repeater">
-          {assignments.map((assignment) => (
-            <div className="repeater-item" key={assignment.id}>
-              <TextInput label="Assignment title" value={assignment.title} onChange={(title) => onChange({ ...subjectClass, assignments: assignments.map((item) => item.id === assignment.id ? { ...item, title } : item) })} />
-              <TextInput label="Due date" value={assignment.dueDate ?? ""} onChange={(dueDate) => onChange({ ...subjectClass, assignments: assignments.map((item) => item.id === assignment.id ? { ...item, dueDate } : item) })} />
-              <TextArea label="Instructions" value={assignment.description} onChange={(description) => onChange({ ...subjectClass, assignments: assignments.map((item) => item.id === assignment.id ? { ...item, description } : item) })} />
-              <button className="remove-button" type="button" onClick={() => onChange({ ...subjectClass, assignments: assignments.filter((item) => item.id !== assignment.id) })}>
-                Remove assignment
-              </button>
+      <nav
+        className="subject-work-nav"
+        aria-label="Subject class sections"
+        style={{ "--subject-nav-color": subject?.color ?? "#1f6857" } as React.CSSProperties}
+      >
+        <span className="subject-work-nav-title">
+          <span className="subject-work-nav-icon">
+            <SchoolIcon size={20} />
+          </span>
+          <strong>{subjectClass.name}</strong>
+        </span>
+        <button className={activeWorkTab === "overview" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("overview")}>Overview</button>
+        <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("resources")}>Resources</button>
+        <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("status")}>Status and follow-up</button>
+        <button className={activeWorkTab === "students" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("students")}>Students</button>
+      </nav>
+      {activeWorkTab === "overview" ? (
+        <section className="subject-overview-panel">
+          <div className="subject-announcement-composer">
+            <h3>Announcements</h3>
+            <TextInput
+              label="Title"
+              value={draftAnnouncement.title}
+              onChange={(title) => setDraftAnnouncement((current) => ({ ...current, title }))}
+            />
+            <TextArea
+              label="Announcement"
+              value={draftAnnouncement.body}
+              onChange={(body) => setDraftAnnouncement((current) => ({ ...current, body }))}
+            />
+            <button className="secondary-action" type="button" onClick={postAnnouncement}>
+              Post announcement
+            </button>
+          </div>
+          <div className="subject-announcement-list">
+            {announcements.length === 0 ? (
+              <div className="empty-editor-state">
+                <h3>No announcements yet</h3>
+                <p>Post announcements for this subject class here.</p>
+              </div>
+            ) : announcements.map((announcement) => (
+              <article className="subject-announcement-card" key={announcement.id}>
+                <div>
+                  <h3>{announcement.title}</h3>
+                  <time>{formatDate(announcement.createdAt)}</time>
+                </div>
+                <p>{announcement.body}</p>
+                <button className="remove-button" type="button" onClick={() => removeAnnouncement(announcement.id)}>
+                  <Trash2 size={16} />
+                  Delete
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {activeWorkTab === "status" ? (
+        <section className="subject-overview-panel">
+          <div className="empty-editor-state">
+            <h3>Status and follow-up</h3>
+            <p>No status tools have been added yet.</p>
+          </div>
+        </section>
+      ) : null}
+      {activeWorkTab === "students" ? (
+        <section className="subject-overview-panel">
+          <div className="subject-student-heading">
+            <h3>Students</h3>
+            <span>{subjectClassStudents.length} student{subjectClassStudents.length === 1 ? "" : "s"}</span>
+          </div>
+          {subjectClassStudents.length === 0 ? (
+            <div className="empty-editor-state">
+              <h3>No students in this subject class</h3>
+              <p>Add students to this subject class from the Classes section.</p>
             </div>
-          ))}
+          ) : (
+            <div className="subject-student-list">
+              {subjectClassStudents.map((student) => (
+                <article className="subject-student-card" key={student.id}>
+                  <strong>{student.firstName} {student.lastName}</strong>
+                  <span>{student.gender || "No gender recorded"}{student.guardians?.[0]?.name ? ` · Guardian: ${student.guardians[0].name}` : ""}</span>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+      {activeWorkTab === "resources" ? (
+        <div className="resource-workspace">
+        <aside className="resource-tree-panel">
+          <div className="resource-tree-heading">
+            <strong>Folders</strong>
+            <button className="icon-action" type="button" onClick={addFolder} aria-label="Add folder">
+              <Plus size={16} />
+            </button>
+          </div>
+          <div
+            className={[
+              "resource-tree-item",
+              !selectedResource && selectedFolderId === "root" ? "active-resource-tree-item" : "",
+              dragTargetFolderId === "root" ? "active-resource-drop-target" : "",
+            ].filter(Boolean).join(" ")}
+            onDragLeave={() => setDragTargetFolderId(null)}
+            onDragOver={(event) => handleFolderDragOver(event, "root")}
+            onDrop={(event) => handleFolderDrop(event, "root")}
+            style={{ "--tree-depth": 0 } as React.CSSProperties}
+          >
+            <button
+              className="resource-tree-toggle"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleTreeFolder("root");
+              }}
+              aria-label={expandedFolderIds.has("root") ? "Collapse root folder" : "Expand root folder"}
+            >
+              <ChevronRight size={14} />
+            </button>
+            <button className="resource-tree-label" type="button" onClick={() => selectTreeFolder("root")}>
+              <Folder size={16} />
+              <span>{subjectClass.name}</span>
+            </button>
+          </div>
+          <div className="resource-tree-children">
+            {renderResourceTree("root", 1)}
+          </div>
+        </aside>
+
+        <section className="resource-main-panel">
+          <div className="resource-main-heading">
+            {!selectedResource ? (
+              <div>
+                <p className="eyebrow">{activeFolder ? "Folder" : "Course root"}</p>
+                {activeFolder ? (
+                  editingFolderId === activeFolder.id ? (
+                    <div className="resource-folder-fields">
+                      <input
+                        className="resource-folder-title-input"
+                        value={activeFolder.name}
+                        onChange={(event) => updateFolders(folders.map((folder) => folder.id === activeFolder.id ? { ...folder, name: event.target.value } : folder))}
+                      />
+                      <TextArea
+                        label="Folder description"
+                        value={activeFolder.description ?? ""}
+                        onChange={(description) => updateFolders(folders.map((folder) => folder.id === activeFolder.id ? { ...folder, description } : folder))}
+                      />
+                    </div>
+                  ) : (
+                    <div className="resource-folder-readonly">
+                      <h3>{activeFolder.name}</h3>
+                      {activeFolder.description ? <p>{activeFolder.description}</p> : null}
+                    </div>
+                  )
+                ) : (
+                  <h3>{subjectClass.name}</h3>
+                )}
+              </div>
+            ) : null}
+            {activeFolder && !selectedResource ? (
+              <div className="resource-detail-actions">
+                {editingFolderId === activeFolder.id ? (
+                  <button className="secondary-action" type="button" onClick={() => setEditingFolderId(null)}>
+                    Done
+                  </button>
+                ) : (
+                  <button className="secondary-action" type="button" onClick={() => setEditingFolderId(activeFolder.id)}>
+                    Edit
+                  </button>
+                )}
+                <button className="remove-button resource-remove-button" type="button" onClick={() => removeFolder(activeFolder.id)}>
+                  <Trash2 size={16} />
+                  Delete folder
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="resource-content-list">
+            {selectedResource ? (
+              <article className="resource-list-item resource-detail-card">
+                <div className="resource-list-item-heading">
+                  {selectedResource.type === "note" ? <FileText size={22} /> : selectedResource.type === "link" ? <Link2 size={22} /> : <Image size={22} />}
+                  {selectedResource.type === "note" && editingResourceId !== selectedResource.id ? <span /> : <strong>{selectedResource.title}</strong>}
+                  <div className="resource-detail-actions">
+                    {editingResourceId === selectedResource.id ? (
+                      <button className="secondary-action" type="button" onClick={saveResourceChanges} disabled={!hasUnsavedResourceChanges}>
+                        <Save size={16} />
+                        Save
+                      </button>
+                    ) : (
+                      <button className="secondary-action" type="button" onClick={() => setEditingResourceId(selectedResource.id)}>
+                        Edit
+                      </button>
+                    )}
+                    <button className="remove-button" type="button" onClick={() => {
+                      removeResource(selectedResource.id);
+                      setSelectedResourceId(null);
+                      setEditingResourceId(null);
+                    }}>
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                {editingResourceId === selectedResource.id ? (
+                  <>
+                    <TextInput label="Title" value={selectedResource.title} onChange={(title) => updateResource(selectedResource.id, { title })} />
+                    {selectedResource.type === "link" ? (
+                      <TextInput label="URL" value={selectedResource.url ?? ""} onChange={(url) => updateResource(selectedResource.id, { url })} />
+                    ) : selectedResource.type === "picture" ? (
+                      <>
+                        <label className="field-label">
+                          Picture
+                          <input type="file" accept="image/*" onChange={(event) => void uploadPictureResourceImage(selectedResource.id, event.target.files?.[0])} />
+                        </label>
+                        {selectedResource.imageDataUrl ? <img className="resource-picture-preview" src={selectedResource.imageDataUrl} alt="" /> : null}
+                        <TextArea label="Description" value={selectedResource.description ?? ""} onChange={(description) => updateResource(selectedResource.id, { description })} />
+                      </>
+                    ) : (
+                      <TextArea label="Note" value={selectedResource.body ?? ""} onChange={(body) => updateResource(selectedResource.id, { body })} />
+                    )}
+                  </>
+                ) : (
+                  <div className={selectedResource.type === "note" ? "resource-note-readonly" : "resource-readonly-content"}>
+                    {selectedResource.type === "link" ? (
+                      selectedResource.url ? <a href={selectedResource.url} target="_blank" rel="noreferrer">{selectedResource.url}</a> : <span>No URL added.</span>
+                    ) : selectedResource.type === "picture" ? (
+                      <div className="resource-picture-readonly">
+                        {selectedResource.imageDataUrl ? <img src={selectedResource.imageDataUrl} alt="" /> : <span>No picture uploaded.</span>}
+                        <p>{selectedResource.description || "No description yet."}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <h3>{selectedResource.title}</h3>
+                        <p>{selectedResource.body || "No note content yet."}</p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </article>
+            ) : (
+              <>
+                <div className="resource-save-row">
+                  <button className="secondary-action" type="button" onClick={saveResourceChanges} disabled={!hasUnsavedResourceChanges}>
+                    <Save size={16} />
+                    Save resource changes
+                  </button>
+                </div>
+                {!activeFolder && childFolders.length === 0 && folderResources.length === 0 ? resourceTypePicker : null}
+                {activeFolder && childFolders.length === 0 && folderResources.length === 0 ? resourceTypePicker : null}
+                {childFolders.map((folder) => (
+                  <article className="resource-list-item folder-resource-item" key={folder.id}>
+                    <button type="button" onClick={() => selectTreeFolder(folder.id)}>
+                      <Folder size={22} />
+                      <strong>{folder.name}</strong>
+                    </button>
+                  </article>
+                ))}
+                {folderResources.map((resource) => (
+                  <article className="resource-list-item folder-resource-item resource-preview-item" key={resource.id}>
+                    <button type="button" onClick={() => selectResource(resource)}>
+                      {resource.type === "note" ? <FileText size={22} /> : resource.type === "link" ? <Link2 size={22} /> : <Image size={22} />}
+                      <span>
+                        <strong>{resource.title}</strong>
+                        <small>
+                          {resource.type === "link"
+                            ? resource.url || "No URL added"
+                            : resource.type === "picture"
+                              ? resource.description || "No description yet"
+                              : resource.body || "No note content yet"}
+                        </small>
+                      </span>
+                    </button>
+                  </article>
+                ))}
+                {(childFolders.length > 0 || folderResources.length > 0) && showFolderResourcePicker ? resourceTypePicker : null}
+              </>
+            )}
+          </div>
+        </section>
         </div>
-      </section>
+      ) : null}
     </div>
   );
 }
@@ -3593,20 +4105,6 @@ function prepareImageUpload(
       image.src = String(reader.result);
     };
 
-    reader.readAsDataURL(file);
-  });
-}
-
-function prepareCourseMaterialUpload(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    if (file.size > MAX_MATERIAL_UPLOAD_BYTES) {
-      reject(new Error(`Material must be ${MAX_MATERIAL_UPLOAD_LABEL} or smaller.`));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read this file."));
-    reader.onload = () => resolve(String(reader.result));
     reader.readAsDataURL(file);
   });
 }

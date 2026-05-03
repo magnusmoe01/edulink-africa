@@ -70,6 +70,9 @@ export type SubjectClass = {
   studentIds: string[];
   courseMaterials?: CourseMaterial[];
   assignments?: Assignment[];
+  resourceFolders?: ResourceFolder[];
+  resources?: SubjectResource[];
+  announcements?: SubjectClassAnnouncement[];
 };
 
 export type CourseMaterial = {
@@ -86,6 +89,32 @@ export type Assignment = {
   title: string;
   dueDate?: string;
   description: string;
+};
+
+export type ResourceFolder = {
+  id: string;
+  name: string;
+  description?: string;
+  parentId?: string;
+};
+
+export type SubjectResource = {
+  id: string;
+  type: "note" | "link" | "picture";
+  title: string;
+  folderId?: string;
+  body?: string;
+  url?: string;
+  imageDataUrl?: string;
+  description?: string;
+  createdAt: string;
+};
+
+export type SubjectClassAnnouncement = {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
 };
 
 export type AboutCategory = {

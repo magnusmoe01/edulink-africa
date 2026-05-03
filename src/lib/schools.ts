@@ -91,11 +91,15 @@ export async function saveSchool(school: School): Promise<void> {
     return;
   }
 
+  const schoolData = removeUndefinedValues({
+    ...school,
+    updatedAt: new Date().toISOString(),
+  });
+
   await setDoc(
     doc(db, COLLECTION, school.id),
     {
-      ...school,
-      updatedAt: new Date().toISOString(),
+      ...schoolData,
       serverUpdatedAt: serverTimestamp(),
     },
     { merge: true },
@@ -123,11 +127,15 @@ export async function saveGlobalAboutConfig(config: GlobalAboutConfig): Promise<
     return;
   }
 
+  const configData = removeUndefinedValues({
+    ...normalizedConfig,
+    updatedAt: new Date().toISOString(),
+  });
+
   await setDoc(
     doc(db, GLOBAL_CONFIG_COLLECTION, GLOBAL_ABOUT_DOC),
     {
-      ...normalizedConfig,
-      updatedAt: new Date().toISOString(),
+      ...configData,
       serverUpdatedAt: serverTimestamp(),
     },
     { merge: true },
@@ -192,6 +200,9 @@ function normalizeSchool(school: School): School {
       ...subjectClass,
       courseMaterials: subjectClass.courseMaterials ?? [],
       assignments: subjectClass.assignments ?? [],
+      resourceFolders: subjectClass.resourceFolders ?? [],
+      resources: subjectClass.resources ?? [],
+      announcements: subjectClass.announcements ?? [],
     })),
     aboutCategories: school.aboutCategories ?? [],
     aboutPages: school.aboutPages ?? [],
@@ -212,4 +223,20 @@ function normalizeGlobalAboutConfig(config: GlobalAboutConfig): GlobalAboutConfi
       kind: page.kind ?? "richText",
     })),
   };
+}
+
+function removeUndefinedValues<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => removeUndefinedValues(item)) as T;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, currentValue]) => currentValue !== undefined)
+        .map(([key, currentValue]) => [key, removeUndefinedValues(currentValue)]),
+    ) as T;
+  }
+
+  return value;
 }
