@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import {
+  ArrowLeft,
   Bold,
   CalendarDays,
   ChevronRight,
+  ClipboardCheck,
   FileText,
   Folder,
   Globe2,
@@ -29,24 +31,29 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCalendarDays, faClipboardCheck, faRulerCombined } from "@fortawesome/free-solid-svg-icons";
 import { sampleSchool } from "./data/sampleSchool";
 import {
   defaultGlobalAboutConfig,
+  defaultGlobalSchoolWorkConfig,
   getAdminProfile,
   getGlobalAboutConfig,
+  getGlobalSchoolWorkConfig,
   getLocalSchool,
   getSchool,
   listSchools,
   saveGlobalAboutConfig,
+  saveGlobalSchoolWorkConfig,
   saveSchool,
   slugifySchoolName,
   deleteSchool
 } from "./lib/schools";
 import { hasFirebaseConfig } from "./lib/firebase";
 import { auth } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, Guardian, NewsItem, ResourceFolder, School, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
 
-type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "classes" | "subjects" | "students" | "schoolWork";
+type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "classes" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings";
 type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork";
 
 const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
@@ -96,6 +103,7 @@ const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "classes", label: "Classes" },
   { id: "subjects", label: "Subjects" },
   { id: "students", label: "Students" },
+  { id: "schoolWorkSettings", label: "School work settings" },
   { id: "schoolWork", label: "Subject class pages" },
 ];
 
@@ -126,8 +134,8 @@ const editorCategories: Array<{
   {
     id: "schoolWork",
     label: "School work",
-    description: "Course materials and assignments for subject classes.",
-    sections: ["schoolWork"],
+    description: "Assessment scales, course materials, and subject class work.",
+    sections: ["schoolWorkSettings", "schoolWork"],
   },
 ];
 
@@ -947,12 +955,14 @@ function AdminPage({ schoolId }: { schoolId: string }) {
   const [adminUser, setAdminUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
+  const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([getSchool(schoolId), getGlobalAboutConfig()]).then(([remoteSchool, nextGlobalAbout]) => {
+    void Promise.all([getSchool(schoolId), getGlobalAboutConfig(), getGlobalSchoolWorkConfig()]).then(([remoteSchool, nextGlobalAbout, nextGlobalSchoolWork]) => {
       setSchool(getLocalSchool(schoolId) ?? remoteSchool);
       setGlobalAbout(nextGlobalAbout);
+      setGlobalSchoolWork(nextGlobalSchoolWork);
     });
   }, [schoolId]);
 
@@ -1067,6 +1077,7 @@ function AdminPage({ schoolId }: { schoolId: string }) {
         <SchoolEditor
           school={school}
           globalAbout={globalAbout}
+          globalSchoolWork={globalSchoolWork}
           onChange={setSchool}
           onSubmit={submit}
           onAutoSave={saveNextSchool}
@@ -1087,7 +1098,8 @@ function SuperAdminPage() {
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
-  const [superAdminView, setSuperAdminView] = useState<"schools" | "globalPages">("schools");
+  const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
+  const [superAdminView, setSuperAdminView] = useState<"schools" | "globalPages" | "schoolWorkSettings">("schools");
   const [query, setQuery] = useState("");
   const [newSchoolName, setNewSchoolName] = useState("");
   const [status, setStatus] = useState("Loading...");
@@ -1097,6 +1109,7 @@ function SuperAdminPage() {
       setProfile({ uid: "local", email: "local-admin@edulink.africa", schoolIds: [sampleSchool.id], superAdmin: true });
       void refreshSchools(setSchools, setStatus);
       void getGlobalAboutConfig().then(setGlobalAbout);
+      void getGlobalSchoolWorkConfig().then(setGlobalSchoolWork);
       return undefined;
     }
 
@@ -1116,6 +1129,7 @@ function SuperAdminPage() {
         }
         void refreshSchools(setSchools, setStatus);
         void getGlobalAboutConfig().then(setGlobalAbout);
+        void getGlobalSchoolWorkConfig().then(setGlobalSchoolWork);
       });
     });
   }, []);
@@ -1183,6 +1197,17 @@ function SuperAdminPage() {
     setStatus("Global about pages saved");
   };
 
+  const saveGlobalSchoolWork = async () => {
+    if (hasFirebaseConfig && !profile?.superAdmin) {
+      setStatus("Only superadmins can save schoolwork settings");
+      return;
+    }
+    setStatus("Saving schoolwork settings...");
+    await saveGlobalSchoolWorkConfig(globalSchoolWork);
+    setGlobalSchoolWork(await getGlobalSchoolWorkConfig());
+    setStatus("Schoolwork settings saved");
+  };
+
   const logout = async () => {
     if (auth) {
       await signOut(auth);
@@ -1245,6 +1270,14 @@ function SuperAdminPage() {
               <LayoutDashboard size={18} />
               Global pages
             </button>
+            <button
+              className={superAdminView === "schoolWorkSettings" ? "active-superadmin-nav" : ""}
+              type="button"
+              onClick={() => setSuperAdminView("schoolWorkSettings")}
+            >
+              <ClipboardCheck size={18} />
+              Schoolwork settings
+            </button>
           </nav>
           {superAdminView === "schools" ? (
             <>
@@ -1268,6 +1301,8 @@ function SuperAdminPage() {
         <section className="superadmin-main">
           {superAdminView === "globalPages" ? (
             <GlobalAboutEditor config={globalAbout} onChange={setGlobalAbout} onSubmit={saveGlobalAbout} />
+          ) : superAdminView === "schoolWorkSettings" ? (
+            <GlobalSchoolWorkEditor config={globalSchoolWork} onChange={setGlobalSchoolWork} onSubmit={saveGlobalSchoolWork} />
           ) : (
             <>
               <div className="simulation-toolbar">
@@ -1439,6 +1474,135 @@ function GlobalAboutEditor({
   );
 }
 
+function GlobalSchoolWorkEditor({
+  config,
+  onChange,
+  onSubmit,
+}: {
+  config: GlobalSchoolWorkConfig;
+  onChange: (config: GlobalSchoolWorkConfig) => void;
+  onSubmit: () => Promise<void>;
+}) {
+  const scales = config.assessmentScales ?? [];
+  const updateScale = (scaleIndex: number, scale: AssessmentScale) => {
+    onChange({
+      ...config,
+      assessmentScales: scales.map((item, index) => index === scaleIndex ? scale : item),
+    });
+  };
+
+  return (
+    <EditorPanel title="Schoolwork settings">
+      <div className="panel-heading global-about-heading">
+        <div>
+          <p>Global default assessment scales are available to every school when teachers create assessments.</p>
+        </div>
+        <button className="primary-action" type="button" onClick={() => void onSubmit()}>
+          <Save size={18} />
+          Save settings
+        </button>
+      </div>
+      <div className="scale-editor-list">
+        <button
+          className="secondary-action repeater-add-button"
+          type="button"
+          onClick={() => onChange({
+            ...config,
+            assessmentScales: [
+              ...scales,
+              {
+                id: `scale-${Date.now()}`,
+                name: "New assessment scale",
+                levels: [
+                  { id: `level-${Date.now()}-1`, value: "3", minPercentage: 80, description: "" },
+                  { id: `level-${Date.now()}-2`, value: "2", minPercentage: 50, description: "" },
+                  { id: `level-${Date.now()}-3`, value: "1", minPercentage: 0, description: "" },
+                  { id: "excused", value: "Excused", minPercentage: 0, description: "" },
+                  { id: "assessed", value: "Assessed", minPercentage: 0, description: "" },
+                ],
+              },
+            ],
+          })}
+        >
+          Add assessment scale
+        </button>
+        {scales.map((scale, scaleIndex) => (
+          <section className="sub-editor-panel assessment-scale-panel" key={scale.id}>
+            <div className="scale-heading">
+              <TextInput
+                label="Scale name"
+                value={scale.name}
+                onChange={(name) => updateScale(scaleIndex, { ...scale, name })}
+              />
+              <TextInput
+                label="Scale id"
+                value={scale.id}
+                onChange={(id) => updateScale(scaleIndex, { ...scale, id: slugifySchoolName(id) })}
+              />
+            </div>
+            <div className="assessment-level-list">
+              {scale.levels.map((level, levelIndex) => (
+                <div className="assessment-level-row" key={level.id}>
+                  <TextInput
+                    label="Value"
+                    value={level.value}
+                    onChange={(value) => updateScale(scaleIndex, {
+                      ...scale,
+                      levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value } : item),
+                    })}
+                  />
+                  <TextInput
+                    label="Minimum %"
+                    value={String(level.minPercentage ?? 0)}
+                    onChange={(minPercentage) => updateScale(scaleIndex, {
+                      ...scale,
+                      levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: parsePercentageInput(minPercentage) } : item),
+                    })}
+                  />
+                  <TextInput
+                    label="Description"
+                    value={level.description ?? ""}
+                    onChange={(description) => updateScale(scaleIndex, {
+                      ...scale,
+                      levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, description } : item),
+                    })}
+                  />
+                  <button
+                    className="remove-button"
+                    type="button"
+                    onClick={() => updateScale(scaleIndex, { ...scale, levels: scale.levels.filter((_, index) => index !== levelIndex) })}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="scale-actions">
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => updateScale(scaleIndex, {
+                  ...scale,
+                  levels: [...scale.levels, { id: `level-${Date.now()}`, value: "", minPercentage: 0, description: "" }],
+                })}
+              >
+                Add level
+              </button>
+              <button
+                className="remove-button"
+                type="button"
+                onClick={() => onChange({ ...config, assessmentScales: scales.filter((_, index) => index !== scaleIndex) })}
+              >
+                Remove scale
+              </button>
+            </div>
+          </section>
+        ))}
+      </div>
+    </EditorPanel>
+  );
+}
+
 function ReadOnlyGlobalAbout({
   config,
   schoolPages,
@@ -1498,6 +1662,7 @@ function ReadOnlyGlobalAbout({
 function SchoolEditor({
   school,
   globalAbout,
+  globalSchoolWork,
   onChange,
   onSubmit,
   onAutoSave,
@@ -1510,6 +1675,7 @@ function SchoolEditor({
 }: {
   school: School;
   globalAbout?: GlobalAboutConfig;
+  globalSchoolWork?: GlobalSchoolWorkConfig;
   onChange: (school: School) => void;
   onSubmit: () => Promise<void>;
   onAutoSave?: (school: School) => Promise<void>;
@@ -1532,15 +1698,23 @@ function SchoolEditor({
   const students = school.students ?? [];
   const subjects = school.subjects ?? [];
   const subjectClasses = school.subjectClasses ?? [];
+  const schoolWorkSettings = school.schoolWorkSettings ?? {
+    enabledGlobalAssessmentScaleIds: globalSchoolWork?.assessmentScales.map((scale) => scale.id) ?? [],
+    customAssessmentScales: [],
+  };
+  const effectiveAssessmentScales = [
+    ...(globalSchoolWork?.assessmentScales.filter((scale) => schoolWorkSettings.enabledGlobalAssessmentScaleIds.includes(scale.id)) ?? []),
+    ...(schoolWorkSettings.customAssessmentScales ?? []),
+  ];
   const accessibleSubjectClasses = subjectClasses.filter((subjectClass) => canAccessAllSubjectClasses || canTeachSubjectClass(school, subjectClass, currentUserEmail));
   const [activeWorkSubjectClassId, setActiveWorkSubjectClassId] = useState<string | null>(null);
   const aboutCategories = school.aboutCategories ?? [];
   const aboutPages = school.aboutPages ?? [];
   const createStudent = (): Student => ({
     id: `student-${Date.now()}`,
-    firstName: "First name",
-    lastName: "Last name",
-    classId: classes[0]?.id ?? "",
+    firstName: "",
+    lastName: "",
+    classId: "",
     dateOfBirth: "",
     gender: "",
     description: "",
@@ -1567,12 +1741,26 @@ function SchoolEditor({
   const [draftStaff, setDraftStaff] = useState<StaffMember>(() => createStaffMember());
   const [draftClass, setDraftClass] = useState<ClassGroup>(() => createClassGroup());
   const [draftStudent, setDraftStudent] = useState<Student>(() => createStudent());
+  const [draftStudentSubjectClassIds, setDraftStudentSubjectClassIds] = useState<string[]>([]);
+  const [draftStudentUseGradeSubjectClasses, setDraftStudentUseGradeSubjectClasses] = useState(false);
+  const [subjectClassSearch, setSubjectClassSearch] = useState("");
   const [draftSubject, setDraftSubject] = useState<Subject>(() => ({
     id: `subject-${Date.now()}`,
     name: "New subject",
     abbreviation: "",
     color: subjectColorOptions[0],
   }));
+  const createSchoolAssessmentScale = (): AssessmentScale => ({
+    id: `school-scale-${Date.now()}`,
+    name: "New school assessment scale",
+    levels: [
+      { id: `level-${Date.now()}-1`, value: "3", minPercentage: 80, description: "" },
+      { id: `level-${Date.now()}-2`, value: "2", minPercentage: 50, description: "" },
+      { id: `level-${Date.now()}-3`, value: "1", minPercentage: 0, description: "" },
+      { id: "excused", value: "Excused", minPercentage: 0, description: "" },
+      { id: "assessed", value: "Assessed", minPercentage: 0, description: "" },
+    ],
+  });
   const updateSchool = (nextSchool: School) => {
     onChange(nextSchool);
     void onAutoSave?.(nextSchool);
@@ -1580,6 +1768,7 @@ function SchoolEditor({
   const setField = <K extends keyof School>(field: K, value: School[K]) => {
     updateSchool({ ...school, [field]: value });
   };
+  const updateSchoolWorkSettings = (nextSettings: SchoolWorkSettings) => setField("schoolWorkSettings", nextSettings);
 
   const createSubject = (): Subject => ({
     id: `subject-${Date.now()}`,
@@ -1732,35 +1921,158 @@ function SchoolEditor({
       </>
     );
   };
+  const getStudentSubjectClassIds = (studentId: string) => subjectClasses
+    .filter((subjectClass) => subjectClass.studentIds.includes(studentId))
+    .map((subjectClass) => subjectClass.id);
+  const getRelevantSubjectClassIds = (classId: string, useGrade: boolean) => {
+    const selectedClass = classes.find((classGroup) => classGroup.id === classId);
+    const selectedGrade = selectedClass?.grade?.trim();
+    return subjectClasses
+      .filter((subjectClass) => {
+        if (!classId) {
+          return false;
+        }
+        if (!useGrade || !selectedGrade) {
+          return subjectClass.baseClassId === classId;
+        }
+        const subjectBaseClass = classes.find((classGroup) => classGroup.id === subjectClass.baseClassId);
+        return subjectBaseClass?.grade?.trim() === selectedGrade;
+      })
+      .map((subjectClass) => subjectClass.id);
+  };
+  const setDraftStudentClass = (classId: string) => {
+    setDraftStudent((current) => ({ ...current, classId }));
+    setDraftStudentSubjectClassIds(getRelevantSubjectClassIds(classId, draftStudentUseGradeSubjectClasses));
+  };
+  const setDraftStudentGradeMode = (useGrade: boolean) => {
+    setDraftStudentUseGradeSubjectClasses(useGrade);
+    setDraftStudentSubjectClassIds(getRelevantSubjectClassIds(draftStudent.classId, useGrade));
+  };
+  const saveDraftStudent = () => {
+    const nextStudents = studentModalIndex === null
+      ? [...students, draftStudent]
+      : students.map((student, index) => index === studentModalIndex ? draftStudent : student);
+    const nextSubjectClassIds = new Set(draftStudentSubjectClassIds);
+    updateSchool({
+      ...school,
+      students: nextStudents,
+      subjectClasses: subjectClasses.map((subjectClass) => ({
+        ...subjectClass,
+        studentIds: nextSubjectClassIds.has(subjectClass.id)
+          ? mergeUnique([...subjectClass.studentIds, draftStudent.id])
+          : subjectClass.studentIds.filter((studentId) => studentId !== draftStudent.id),
+      })),
+    });
+    setStudentModalIndex(undefined);
+  };
   const renderStudentFields = (item: Student, update: (item: Student) => void) => (
-    <>
-      <div className="split-fields">
-        <TextInput label="First name" value={item.firstName} onChange={(value) => update({ ...item, firstName: value })} />
-        <TextInput label="Last name" value={item.lastName} onChange={(value) => update({ ...item, lastName: value })} />
-      </div>
-      <SelectInput
-        label="Class"
-        value={item.classId}
-        options={classes.map((classGroup) => ({ value: classGroup.id, label: classGroup.name }))}
-        onChange={(value) => update({ ...item, classId: value })}
-      />
-      <div className="split-fields">
-        <TextInput label="Date of birth" value={item.dateOfBirth ?? ""} onChange={(value) => update({ ...item, dateOfBirth: value })} />
+    <div className="student-modal-grid">
+      <div className="student-modal-main">
+        <div className="split-fields">
+          <TextInput label="First name" value={item.firstName} onChange={(value) => update({ ...item, firstName: value })} />
+          <TextInput label="Last name" value={item.lastName} onChange={(value) => update({ ...item, lastName: value })} />
+        </div>
         <SelectInput
-          label="Gender"
-          value={item.gender ?? ""}
+          label="Class"
+          value={item.classId}
           options={[
-            { value: "", label: "Select gender" },
-            { value: "Female", label: "Female" },
-            { value: "Male", label: "Male" },
-            { value: "Other", label: "Other" },
-            { value: "Prefer not to say", label: "Prefer not to say" },
+            { value: "", label: "Select class" },
+            ...classes.map((classGroup) => ({ value: classGroup.id, label: classGroup.name })),
           ]}
-          onChange={(value) => update({ ...item, gender: value })}
+          onChange={setDraftStudentClass}
         />
+        <CheckboxInput
+          label="Add to subject classes for all classes in this grade"
+          checked={draftStudentUseGradeSubjectClasses}
+          onChange={setDraftStudentGradeMode}
+        />
+        <div className="split-fields">
+          <TextInput label="Date of birth" value={item.dateOfBirth ?? ""} onChange={(value) => update({ ...item, dateOfBirth: value })} />
+          <SelectInput
+            label="Gender"
+            value={item.gender ?? ""}
+            options={[
+              { value: "", label: "Select gender" },
+              { value: "Female", label: "Female" },
+              { value: "Male", label: "Male" },
+              { value: "Other", label: "Other" },
+              { value: "Prefer not to say", label: "Prefer not to say" },
+            ]}
+            onChange={(value) => update({ ...item, gender: value })}
+          />
+        </div>
+        <TextArea label="Description (optional)" value={item.description ?? ""} onChange={(value) => update({ ...item, description: value })} />
+        <GuardianEditor guardians={item.guardians ?? []} onChange={(guardians) => update({ ...item, guardians })} />
       </div>
-      <TextArea label="Description (optional)" value={item.description ?? ""} onChange={(value) => update({ ...item, description: value })} />
-      <GuardianEditor guardians={item.guardians ?? []} onChange={(guardians) => update({ ...item, guardians })} />
+      <SubjectClassStudentPicker
+        classes={classes}
+        subjects={subjects}
+        subjectClasses={subjectClasses}
+        search={subjectClassSearch}
+        selectedIds={draftStudentSubjectClassIds}
+        onSearchChange={setSubjectClassSearch}
+        onSelectedIdsChange={setDraftStudentSubjectClassIds}
+      />
+    </div>
+  );
+  const renderAssessmentScaleFields = (scale: AssessmentScale, update: (scale: AssessmentScale) => void) => (
+    <>
+      <div className="scale-heading">
+        <TextInput label="Scale name" value={scale.name} onChange={(name) => update({ ...scale, name })} />
+        <TextInput label="Scale id" value={scale.id} onChange={(id) => update({ ...scale, id: slugifySchoolName(id) })} />
+      </div>
+      <div className="assessment-level-list">
+        {scale.levels.map((level, levelIndex) => {
+          const isRequiredLevel = level.id === "excused" || level.id === "assessed";
+          return (
+            <div className="assessment-level-row" key={level.id}>
+              <TextInput
+                label="Value"
+                value={level.value}
+                onChange={(value) => update({
+                  ...scale,
+                  levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value } : item),
+                })}
+              />
+              <TextInput
+                label="Minimum %"
+                value={String(level.minPercentage ?? 0)}
+                onChange={(minPercentage) => update({
+                  ...scale,
+                  levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: parsePercentageInput(minPercentage) } : item),
+                })}
+              />
+              <TextInput
+                label="Description"
+                value={level.description ?? ""}
+                onChange={(description) => update({
+                  ...scale,
+                  levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, description } : item),
+                })}
+              />
+              {isRequiredLevel ? <span className="required-scale-level-label">Required</span> : (
+                <button
+                  className="remove-button"
+                  type="button"
+                  onClick={() => update({ ...scale, levels: scale.levels.filter((_, index) => index !== levelIndex) })}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button
+        className="secondary-action"
+        type="button"
+        onClick={() => update({
+          ...scale,
+          levels: [...scale.levels.slice(0, -2), { id: `level-${Date.now()}`, value: "", minPercentage: 0, description: "" }, ...scale.levels.slice(-2)],
+        })}
+      >
+        Add level
+      </button>
     </>
   );
   const globalCategories = globalAbout?.categories ?? [];
@@ -1996,24 +2308,29 @@ function SchoolEditor({
 
         {activeSection === "calendar" ? (
           <EditorPanel title="Calendar">
-            <button
-              className="secondary-action repeater-add-button"
-              type="button"
-              onClick={() => {
-                setDraftCalendar(createCalendarItem());
-                setCalendarModalIndex(null);
-              }}
-            >
-              Add event
-            </button>
-            <CalendarTable
-              items={school.calendar}
-              onEdit={(item, index) => {
-                setDraftCalendar(item);
-                setCalendarModalIndex(index);
-              }}
-              onRemove={(index) => setField("calendar", school.calendar.filter((_, currentIndex) => currentIndex !== index))}
-            />
+            <div className="calendar-editor-layout">
+              <div className="calendar-editor-main">
+                <button
+                  className="secondary-action repeater-add-button"
+                  type="button"
+                  onClick={() => {
+                    setDraftCalendar(createCalendarItem());
+                    setCalendarModalIndex(null);
+                  }}
+                >
+                  Add event
+                </button>
+                <CalendarTable
+                  items={school.calendar}
+                  onEdit={(item, index) => {
+                    setDraftCalendar(item);
+                    setCalendarModalIndex(index);
+                  }}
+                  onRemove={(index) => setField("calendar", school.calendar.filter((_, currentIndex) => currentIndex !== index))}
+                />
+              </div>
+              <CalendarAdminPreview items={school.calendar} />
+            </div>
             {calendarModalIndex !== undefined ? (
               <RegistrationModal
                 title={calendarModalIndex === null ? "Create event" : "Edit event"}
@@ -2259,12 +2576,82 @@ function SchoolEditor({
           </EditorPanel>
         ) : null}
 
+        {activeSection === "schoolWorkSettings" ? (
+          <EditorPanel title="School work settings">
+            <div className="nested-editor-grid">
+              <section className="sub-editor-panel">
+                <h3>Assessment scales</h3>
+                <div className="assessment-scale-toggle-list">
+                  {(globalSchoolWork?.assessmentScales ?? []).map((scale) => (
+                    <label className="assessment-scale-toggle" key={scale.id}>
+                      <div>
+                        <strong>{scale.name}</strong>
+                        <small>{scale.levels.map((level) => level.value).join(", ")}</small>
+                      </div>
+                      <CheckboxInput
+                        label="Enabled"
+                        checked={schoolWorkSettings.enabledGlobalAssessmentScaleIds.includes(scale.id)}
+                        onChange={(checked) => updateSchoolWorkSettings({
+                          ...schoolWorkSettings,
+                          enabledGlobalAssessmentScaleIds: checked
+                            ? mergeUnique([...schoolWorkSettings.enabledGlobalAssessmentScaleIds, scale.id])
+                            : schoolWorkSettings.enabledGlobalAssessmentScaleIds.filter((id) => id !== scale.id),
+                        })}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="sub-editor-panel">
+                <h3>Custom assessment scales</h3>
+                <div className="scale-editor-list">
+                  <button
+                    className="secondary-action repeater-add-button"
+                    type="button"
+                    onClick={() => updateSchoolWorkSettings({
+                      ...schoolWorkSettings,
+                      customAssessmentScales: [...schoolWorkSettings.customAssessmentScales, createSchoolAssessmentScale()],
+                    })}
+                  >
+                    Add school assessment scale
+                  </button>
+                  {schoolWorkSettings.customAssessmentScales.length === 0 ? (
+                    <div className="empty-editor-state">
+                      <h3>No school-specific scales yet</h3>
+                      <p>Create a custom scale here if this school should use something besides the enabled global scales.</p>
+                    </div>
+                  ) : schoolWorkSettings.customAssessmentScales.map((scale, scaleIndex) => (
+                    <section className="sub-editor-panel assessment-scale-panel" key={scale.id}>
+                      {renderAssessmentScaleFields(scale, (nextScale) => updateSchoolWorkSettings({
+                        ...schoolWorkSettings,
+                        customAssessmentScales: schoolWorkSettings.customAssessmentScales.map((item, index) => index === scaleIndex ? nextScale : item),
+                      }))}
+                      <button
+                        className="remove-button"
+                        type="button"
+                        onClick={() => updateSchoolWorkSettings({
+                          ...schoolWorkSettings,
+                          customAssessmentScales: schoolWorkSettings.customAssessmentScales.filter((_, index) => index !== scaleIndex),
+                        })}
+                      >
+                        Remove scale
+                      </button>
+                    </section>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </EditorPanel>
+        ) : null}
+
         {isSchoolWorkPage && activeWorkSubjectClassId ? (
           <div className="school-work-detail-shell">
             <SubjectClassWorkPage
               subjectClass={subjectClasses.find((item) => item.id === activeWorkSubjectClassId) ?? null}
               subjects={subjects}
               students={students}
+              assessmentScales={effectiveAssessmentScales}
               onBack={() => setActiveWorkSubjectClassId(null)}
               onChange={(nextSubjectClass) => setField("subjectClasses", subjectClasses.map((item) => item.id === nextSubjectClass.id ? nextSubjectClass : item))}
             />
@@ -2287,7 +2674,11 @@ function SchoolEditor({
                   className="secondary-action repeater-add-button"
                   type="button"
                   onClick={() => {
-                    setDraftStudent(createStudent());
+                    const nextStudent = createStudent();
+                    setDraftStudent(nextStudent);
+                    setDraftStudentUseGradeSubjectClasses(false);
+                    setDraftStudentSubjectClassIds([]);
+                    setSubjectClassSearch("");
                     setStudentModalIndex(null);
                   }}
                 >
@@ -2298,6 +2689,9 @@ function SchoolEditor({
                   classes={classes}
                   onEdit={(student, index) => {
                     setDraftStudent(student);
+                    setDraftStudentUseGradeSubjectClasses(false);
+                    setDraftStudentSubjectClassIds(getStudentSubjectClassIds(student.id));
+                    setSubjectClassSearch("");
                     setStudentModalIndex(index);
                   }}
                   onRemove={(index) => {
@@ -2319,13 +2713,9 @@ function SchoolEditor({
                     title={studentModalIndex === null ? "Add student" : "Edit student"}
                     eyebrow="Students"
                     submitLabel={studentModalIndex === null ? "Add student" : "Save student"}
+                    wide
                     onClose={() => setStudentModalIndex(undefined)}
-                    onSubmit={() => {
-                      setField("students", studentModalIndex === null
-                        ? [...students, draftStudent]
-                        : students.map((student, index) => index === studentModalIndex ? draftStudent : student));
-                      setStudentModalIndex(undefined);
-                    }}
+                    onSubmit={saveDraftStudent}
                   >
                     {renderStudentFields(draftStudent, setDraftStudent)}
                   </RegistrationModal>
@@ -2428,6 +2818,7 @@ function getEditorSectionDescription(section: EditorSection) {
     staff: "Staff profiles, visibility, and contact details.",
     classes: "Main classes and subject classes with student groups.",
     subjects: "Subject catalog, abbreviations, and display colors.",
+    schoolWorkSettings: "Enable global assessment scales and create school-specific ones.",
     schoolWork: "Course materials and assignments for subject classes.",
     students: "Student records, guardians, and class assignments.",
   };
@@ -2504,6 +2895,87 @@ function StudentTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function SubjectClassStudentPicker({
+  classes,
+  subjects,
+  subjectClasses,
+  search,
+  selectedIds,
+  onSearchChange,
+  onSelectedIdsChange,
+}: {
+  classes: ClassGroup[];
+  subjects: Subject[];
+  subjectClasses: SubjectClass[];
+  search: string;
+  selectedIds: string[];
+  onSearchChange: (search: string) => void;
+  onSelectedIdsChange: (selectedIds: string[]) => void;
+}) {
+  const selectedSet = new Set(selectedIds);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredSubjectClasses = subjectClasses.filter((subjectClass) => {
+    const subject = subjects.find((item) => item.id === subjectClass.subjectId);
+    const classGroup = classes.find((item) => item.id === subjectClass.baseClassId);
+    const haystack = `${subjectClass.name} ${subject?.name ?? ""} ${classGroup?.name ?? ""} ${classGroup?.grade ?? ""} ${subjectClass.teacherName ?? ""}`.toLowerCase();
+    return !normalizedSearch || haystack.includes(normalizedSearch);
+  });
+
+  return (
+    <aside className="student-subject-class-picker">
+      <div>
+        <h3>Subject classes</h3>
+        <p>{selectedIds.length} selected</p>
+      </div>
+      <TextInput label="Search subject classes" value={search} onChange={onSearchChange} icon={<Search size={18} />} />
+      <div className="student-subject-class-actions">
+        <button
+          className="secondary-action"
+          type="button"
+          onClick={() => onSelectedIdsChange(mergeUnique([...selectedIds, ...filteredSubjectClasses.map((subjectClass) => subjectClass.id)]))}
+        >
+          Select shown
+        </button>
+        <button
+          className="secondary-action"
+          type="button"
+          onClick={() => onSelectedIdsChange(selectedIds.filter((id) => !filteredSubjectClasses.some((subjectClass) => subjectClass.id === id)))}
+        >
+          Clear shown
+        </button>
+      </div>
+      <div className="student-subject-class-list">
+        {filteredSubjectClasses.length === 0 ? (
+          <div className="empty-editor-state">
+            <h3>No subject classes found</h3>
+            <p>Try another search term.</p>
+          </div>
+        ) : filteredSubjectClasses.map((subjectClass) => {
+          const subject = subjects.find((item) => item.id === subjectClass.subjectId);
+          const classGroup = classes.find((item) => item.id === subjectClass.baseClassId);
+          return (
+            <label className="student-subject-class-option" key={subjectClass.id}>
+              <input
+                type="checkbox"
+                checked={selectedSet.has(subjectClass.id)}
+                onChange={(event) => {
+                  onSelectedIdsChange(event.target.checked
+                    ? mergeUnique([...selectedIds, subjectClass.id])
+                    : selectedIds.filter((id) => id !== subjectClass.id));
+                }}
+              />
+              <span>
+                <strong>{subjectClass.name}</strong>
+                <small>{subject?.name ?? "No subject"}{classGroup ? ` - ${classGroup.name}${classGroup.grade ? `, Grade ${classGroup.grade}` : ""}` : " - Mixed classes"}</small>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 
@@ -2729,8 +3201,8 @@ function CalendarTable({
               <td><strong>{item.title}</strong></td>
               <td>{item.date}</td>
               <td>
-                <div className="table-actions">
-                  <button className="secondary-action" type="button" onClick={() => onEdit(item, index)}>
+                <div className="table-actions calendar-table-actions">
+                  <button className="calendar-edit-action" type="button" onClick={() => onEdit(item, index)}>
                     Edit
                   </button>
                   <button className="remove-button" type="button" onClick={() => onRemove(index)}>
@@ -2743,6 +3215,34 @@ function CalendarTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function CalendarAdminPreview({ items }: { items: CalendarItem[] }) {
+  return (
+    <aside className="calendar-admin-preview" aria-label="Calendar website preview">
+      <div className="mini-preview-label">Website preview</div>
+      <InfoPanel title="Calendar">
+        {items.length === 0 ? (
+          <div className="empty-editor-state calendar-preview-empty">
+            <h3>No events yet</h3>
+            <p>Add events to preview the public calendar list.</p>
+          </div>
+        ) : (
+          <div className="calendar-list">
+            {items.map((item) => (
+              <div className="calendar-row" key={`${item.title}-${item.date}`}>
+                <CalendarDays size={18} />
+                <div>
+                  <time>{formatDate(item.date)}</time>
+                  <p>{item.title}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </InfoPanel>
+    </aside>
   );
 }
 
@@ -2874,7 +3374,7 @@ function SchoolWorkOverview({
             <strong>{subject?.name ?? subjectClass.name}</strong>
             <span>{subjectClass.teacherName || "No teacher assigned"}</span>
             <span>{mainClass ? `${mainClass.name}${mainClass.grade ? ` · Grade ${mainClass.grade}` : ""}` : "Mixed classes"}</span>
-            <small>{studentCount} student{studentCount === 1 ? "" : "s"} · {subjectClass.resourceFolders?.length ?? 0} folders · {subjectClass.resources?.length ?? 0} resources</small>
+            <small>{studentCount} student{studentCount === 1 ? "" : "s"} · {subjectClass.assessments?.length ?? 0} assessments · {subjectClass.resources?.length ?? 0} resources</small>
           </button>
         );
       })}
@@ -2882,28 +3382,349 @@ function SchoolWorkOverview({
   );
 }
 
+const assessmentFormatOptions = [
+  { value: "Written work", label: "Written work" },
+  { value: "Quiz", label: "Quiz" },
+  { value: "Project", label: "Project" },
+  { value: "Oral presentation", label: "Oral presentation" },
+  { value: "Practical task", label: "Practical task" },
+  { value: "Portfolio", label: "Portfolio" },
+];
+
+function createAssessment(assessmentScales: AssessmentScale[], folderId?: string): Assessment {
+  return {
+    id: `assessment-${Date.now()}`,
+    title: "New assessment",
+    date: new Date().toISOString().slice(0, 10),
+    requiresTurnIn: true,
+    format: assessmentFormatOptions[0].value,
+    scaleId: assessmentScales[0]?.id ?? "",
+    ...(folderId ? { folderId } : {}),
+    description: "",
+    grades: [],
+  };
+}
+
+function ensureAssessmentGrades(assessment: Assessment, students: Student[]) {
+  const existingGrades = assessment.grades ?? [];
+  return {
+    ...assessment,
+    grades: students.map((student) => existingGrades.find((grade) => grade.studentId === student.id) ?? { studentId: student.id }),
+  };
+}
+
+function getAssessmentGradeDisplay(assessment: Assessment, scales: AssessmentScale[], studentId: string) {
+  const grade = assessment.grades.find((item) => item.studentId === studentId);
+  if (!grade) {
+    return "-";
+  }
+
+  const scale = scales.find((item) => item.id === assessment.scaleId);
+  const level = scale?.levels.find((item) => item.id === grade.levelId);
+  return level?.value || "-";
+}
+
+function getStudentOverallGradeDisplay(assessments: Assessment[], scales: AssessmentScale[], studentId: string) {
+  const numericGrades = assessments
+    .map((assessment) => {
+      const grade = assessment.grades.find((item) => item.studentId === studentId);
+      const scale = scales.find((item) => item.id === assessment.scaleId);
+      const level = scale?.levels.find((item) => item.id === grade?.levelId);
+      const numericValue = Number(level?.value);
+      return Number.isFinite(numericValue) ? numericValue : null;
+    })
+    .filter((value): value is number => value !== null);
+
+  if (numericGrades.length === 0) {
+    return "-";
+  }
+
+  const average = numericGrades.reduce((sum, value) => sum + value, 0) / numericGrades.length;
+  return Number.isInteger(average) ? String(average) : average.toFixed(1);
+}
+
+function getAssessmentStudentStatus(assessment: Assessment, grade?: AssessmentGrade) {
+  if (grade?.levelId) {
+    return "Graded";
+  }
+  if (assessment.requiresTurnIn) {
+    return grade?.submitted ? "Submitted" : "Not submitted";
+  }
+  return "Not graded";
+}
+
+function AssessmentFields({
+  assessment,
+  scales,
+  onChange,
+}: {
+  assessment: Assessment;
+  scales: AssessmentScale[];
+  onChange: (assessment: Assessment) => void;
+}) {
+  return (
+    <>
+      <TextInput label="Title" value={assessment.title} onChange={(title) => onChange({ ...assessment, title })} />
+      <TextInput label="Date" value={assessment.date} onChange={(date) => onChange({ ...assessment, date })} />
+      <CheckboxInput
+        label="Students need to turn something in"
+        checked={assessment.requiresTurnIn}
+        onChange={(requiresTurnIn) => onChange({ ...assessment, requiresTurnIn })}
+      />
+      <SelectInput
+        label="Assessment format"
+        value={assessment.format}
+        options={assessmentFormatOptions}
+        onChange={(format) => onChange({ ...assessment, format })}
+      />
+      <SelectInput
+        label="Assessment scale"
+        value={assessment.scaleId}
+        options={scales.map((scale) => ({ value: scale.id, label: scale.name }))}
+        onChange={(scaleId) => onChange({ ...assessment, scaleId })}
+      />
+      <TextArea label="Description" value={assessment.description ?? ""} onChange={(description) => onChange({ ...assessment, description })} />
+    </>
+  );
+}
+
+function GradebookView({
+  assessments,
+  scales,
+  students,
+  onOpenAssessment,
+}: {
+  assessments: Assessment[];
+  scales: AssessmentScale[];
+  students: Student[];
+  onOpenAssessment: (assessmentId: string) => void;
+}) {
+  const [studentSearch, setStudentSearch] = useState("");
+  const sortedAssessments = [...assessments].sort((first, second) => {
+    const dateDifference = new Date(first.date).getTime() - new Date(second.date).getTime();
+    return dateDifference || first.title.localeCompare(second.title);
+  });
+  const filteredStudents = students.filter((student) => `${student.firstName} ${student.lastName}`.toLowerCase().includes(studentSearch.trim().toLowerCase()));
+
+  return (
+    <section className="assessment-record-page">
+      <div className="assessment-record-heading">
+        <h2>Assessment record</h2>
+        <button className="icon-action assessment-record-menu-button" type="button" aria-label="Assessment record options">...</button>
+      </div>
+      <div className="assessment-record-search-row">
+        <label className="assessment-record-search">
+          <input placeholder="Search students" value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} />
+          <Search size={18} />
+        </label>
+      </div>
+      {students.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No students in this subject class</h3>
+          <p>Add students before reviewing grades.</p>
+        </div>
+      ) : sortedAssessments.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No assessments yet</h3>
+          <p>Create assessments from Resources to build the gradebook.</p>
+        </div>
+      ) : (
+        <>
+          <div className="data-table-wrap assessment-record-table-wrap">
+            <table className="data-table gradebook-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Overall average</th>
+                  {sortedAssessments.map((assessment) => (
+                    <th key={assessment.id}>
+                      <button className="gradebook-assessment-button" type="button" onClick={() => onOpenAssessment(assessment.id)}>
+                        <strong>{assessment.title}</strong>
+                        <span>{assessment.date}</span>
+                      </button>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStudents.map((student) => (
+                  <tr key={student.id}>
+                    <td><strong>{student.firstName} {student.lastName}</strong></td>
+                    <td>{getStudentOverallGradeDisplay(sortedAssessments, scales, student.id)}</td>
+                    {sortedAssessments.map((assessment) => (
+                      <td key={assessment.id}>
+                        {getAssessmentGradeDisplay(assessment, scales, student.id)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function AssessmentResourceDetail({
+  assessment,
+  scale,
+  students,
+  onEdit,
+  onRemove,
+  onGradeChange,
+}: {
+  assessment: Assessment;
+  scale?: AssessmentScale;
+  students: Student[];
+  onEdit: () => void;
+  onRemove: () => void;
+  onGradeChange: (studentId: string, patch: Partial<AssessmentGrade>) => void;
+}) {
+  const grades = ensureAssessmentGrades(assessment, students).grades;
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(students[0]?.id ?? null);
+  const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null;
+  const selectedGrade = selectedStudent ? grades.find((grade) => grade.studentId === selectedStudent.id) ?? { studentId: selectedStudent.id } : null;
+
+  return (
+    <article className="resource-list-item resource-detail-card assessment-card">
+      <div className="assessment-card-heading">
+        <div>
+          <p className="eyebrow">{assessment.format}</p>
+          <h3>{assessment.title}</h3>
+          <div className="assessment-meta-list">
+            <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Date:</strong> {assessment.date}</p>
+            <p><FontAwesomeIcon icon={faClipboardCheck} fixedWidth /><strong>Turn-in required:</strong> {assessment.requiresTurnIn ? "Yes" : "No"}</p>
+            <p><FontAwesomeIcon icon={faRulerCombined} fixedWidth /><strong>Assessment scale:</strong> {scale?.name ?? "No scale"}</p>
+          </div>
+        </div>
+        <div className="resource-detail-actions">
+          <button className="secondary-action" type="button" onClick={onEdit}>Edit</button>
+          <button className="remove-button" type="button" onClick={onRemove}>
+            <Trash2 size={16} />
+            Delete
+          </button>
+        </div>
+      </div>
+      {assessment.description ? <p className="assessment-description">{assessment.description}</p> : null}
+      {students.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No students in this subject class</h3>
+          <p>Add students before grading assessments.</p>
+        </div>
+      ) : (
+        selectedStudent && selectedGrade ? (
+          <section className="assessment-student-detail-page">
+            <div className="editor-back-row">
+              <button className="assessment-back-link" type="button" onClick={() => setSelectedStudentId(null)}>
+                <ArrowLeft size={16} />
+                Back to assessment
+              </button>
+            </div>
+            <section className="assessment-student-grading-panel">
+              <div>
+                <p className="eyebrow">{getAssessmentStudentStatus(assessment, selectedGrade)}</p>
+                <h3>{selectedStudent.firstName} {selectedStudent.lastName}</h3>
+              </div>
+              {assessment.requiresTurnIn ? (
+                <SelectInput
+                  label="Submission status"
+                  value={selectedGrade.submitted ? "submitted" : "not-submitted"}
+                  options={[
+                    { value: "not-submitted", label: "Not submitted" },
+                    { value: "submitted", label: "Submitted" },
+                  ]}
+                  onChange={(value) => onGradeChange(selectedStudent.id, { submitted: value === "submitted" })}
+                />
+              ) : null}
+              <SelectInput
+                label="Grade"
+                value={selectedGrade.levelId ?? ""}
+                options={[
+                  { value: "", label: "Not graded" },
+                  ...(scale?.levels ?? []).map((level) => ({ value: level.id, label: level.value })),
+                ]}
+                onChange={(levelId) => onGradeChange(selectedStudent.id, {
+                  levelId: levelId || undefined,
+                  ...(assessment.requiresTurnIn && levelId ? { submitted: true } : {}),
+                })}
+              />
+              <TextArea
+                label="Feedback"
+                value={selectedGrade.feedback ?? ""}
+                onChange={(feedback) => onGradeChange(selectedStudent.id, { feedback })}
+              />
+            </section>
+          </section>
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table assessment-student-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Status</th>
+                  <th>Grade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((student) => {
+                  const grade = grades.find((item) => item.studentId === student.id) ?? { studentId: student.id };
+                  const status = getAssessmentStudentStatus(assessment, grade);
+                  return (
+                    <tr
+                      className={selectedStudentId === student.id ? "active-assessment-student-row" : ""}
+                      key={student.id}
+                      onClick={() => setSelectedStudentId(student.id)}
+                    >
+                      <td>
+                        <button className="assessment-student-button" type="button" onClick={() => setSelectedStudentId(student.id)}>
+                          <strong>{student.firstName} {student.lastName}</strong>
+                        </button>
+                      </td>
+                      <td><span className={`assessment-status-badge assessment-status-${slugifySchoolName(status)}`}>{status}</span></td>
+                      <td>{getAssessmentGradeDisplay(assessment, scale ? [scale] : [], student.id)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </article>
+  );
+}
+
 function SubjectClassWorkPage({
   subjectClass,
   subjects,
   students,
+  assessmentScales,
   onBack,
   onChange,
 }: {
   subjectClass: SubjectClass | null;
   subjects: Subject[];
   students: Student[];
+  assessmentScales: AssessmentScale[];
   onBack: () => void;
   onChange: (subjectClass: SubjectClass) => void;
 }) {
   const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "students">("resources");
   const [selectedFolderId, setSelectedFolderId] = useState("root");
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
   const [showFolderResourcePicker, setShowFolderResourcePicker] = useState(false);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set(["root"]));
   const [dragTargetFolderId, setDragTargetFolderId] = useState<string | null>(null);
   const [draftAnnouncement, setDraftAnnouncement] = useState<Pick<SubjectClassAnnouncement, "title" | "body">>({ title: "", body: "" });
+  const [assessmentModalIndex, setAssessmentModalIndex] = useState<number | null | undefined>(undefined);
+  const [draftAssessment, setDraftAssessment] = useState<Assessment>(() => createAssessment(assessmentScales));
+  const [selectedGradeAssessmentId, setSelectedGradeAssessmentId] = useState<string | null>(null);
+  const [activeStatusView, setActiveStatusView] = useState<"assessmentRecord">("assessmentRecord");
   const committedResources = useMemo(() => subjectClass?.resources ?? [], [subjectClass?.resources]);
   const committedResourceSignature = useMemo(() => JSON.stringify(committedResources), [committedResources]);
   const pendingResourceSaveSignature = useRef<string | null>(null);
@@ -2934,17 +3755,54 @@ function SubjectClassWorkPage({
 
   const subject = subjects.find((item) => item.id === subjectClass.subjectId);
   const announcements = subjectClass.announcements ?? [];
+  const assessments = subjectClass.assessments ?? [];
   const subjectClassStudents = students.filter((student) => subjectClass.studentIds.includes(student.id));
   const folders = subjectClass.resourceFolders ?? [];
   const resources = draftResources;
   const activeFolderId = selectedFolderId === "root" ? undefined : selectedFolderId;
   const activeFolder = folders.find((folder) => folder.id === activeFolderId);
   const selectedResource = resources.find((resource) => resource.id === selectedResourceId) ?? null;
-  const selectedTreeFolderId = selectedResource ? (selectedResource.folderId ?? "root") : activeFolder ? activeFolder.id : "root";
+  const selectedAssessment = assessments.find((assessment) => assessment.id === selectedAssessmentId) ?? null;
+  const selectedTreeFolderId = selectedResource
+    ? (selectedResource.folderId ?? "root")
+    : selectedAssessment
+      ? (selectedAssessment.folderId ?? "root")
+      : activeFolder
+        ? activeFolder.id
+        : "root";
   const childFolders = folders.filter((folder) => (folder.parentId ?? "root") === selectedTreeFolderId);
   const folderResources = resources.filter((resource) => (resource.folderId ?? "root") === selectedTreeFolderId);
+  const folderAssessments = assessments.filter((assessment) => (assessment.folderId ?? "root") === selectedTreeFolderId);
   const updateFolders = (nextFolders: ResourceFolder[]) => onChange({ ...subjectClass, resourceFolders: nextFolders });
   const updateResources = (nextResources: SubjectResource[]) => onChange({ ...subjectClass, resources: nextResources });
+  const updateAssessments = (nextAssessments: Assessment[]) => onChange({ ...subjectClass, assessments: nextAssessments });
+  const saveDraftAssessment = () => {
+    const assessmentWithGrades = ensureAssessmentGrades(draftAssessment, subjectClassStudents);
+    updateAssessments(assessmentModalIndex === null
+      ? [...assessments, assessmentWithGrades]
+      : assessments.map((assessment, index) => index === assessmentModalIndex ? assessmentWithGrades : assessment));
+    setAssessmentModalIndex(undefined);
+  };
+  const updateAssessmentGrade = (assessmentId: string, studentId: string, patch: Partial<AssessmentGrade>) => {
+    updateAssessments(assessments.map((assessment) => {
+      if (assessment.id !== assessmentId) {
+        return assessment;
+      }
+      const existingGrade = assessment.grades.find((grade) => grade.studentId === studentId) ?? { studentId };
+      const nextGrade = {
+        ...existingGrade,
+        ...patch,
+        gradedAt: new Date().toISOString(),
+      };
+      return {
+        ...assessment,
+        grades: [
+          ...assessment.grades.filter((grade) => grade.studentId !== studentId),
+          nextGrade,
+        ],
+      };
+    }));
+  };
   const postAnnouncement = () => {
     if (!draftAnnouncement.title.trim() && !draftAnnouncement.body.trim()) {
       return;
@@ -2966,6 +3824,7 @@ function SubjectClassWorkPage({
   const selectTreeFolder = (folderId: string) => {
     setSelectedFolderId(folderId);
     setSelectedResourceId(null);
+    setSelectedAssessmentId(null);
     setEditingFolderId(null);
     setEditingResourceId(null);
     setShowFolderResourcePicker(false);
@@ -2974,6 +3833,15 @@ function SubjectClassWorkPage({
   const selectResource = (resource: SubjectResource) => {
     setSelectedFolderId(resource.folderId ?? "root");
     setSelectedResourceId(resource.id);
+    setSelectedAssessmentId(null);
+    setEditingFolderId(null);
+    setEditingResourceId(null);
+    setShowFolderResourcePicker(false);
+  };
+  const selectAssessment = (assessment: Assessment) => {
+    setSelectedFolderId(assessment.folderId ?? "root");
+    setSelectedResourceId(null);
+    setSelectedAssessmentId(assessment.id);
     setEditingFolderId(null);
     setEditingResourceId(null);
     setShowFolderResourcePicker(false);
@@ -3046,9 +3914,12 @@ function SubjectClassWorkPage({
     }
     updateFolders(folders.filter((folder) => !idsToRemove.has(folder.id)));
     const nextResources = committedResources.filter((resource) => !resource.folderId || !idsToRemove.has(resource.folderId));
+    const nextAssessments = assessments.filter((assessment) => !assessment.folderId || !idsToRemove.has(assessment.folderId));
     updateResources(nextResources);
+    updateAssessments(nextAssessments);
     setDraftResources(nextResources);
     setHasUnsavedResourceChanges(false);
+    setSelectedAssessmentId(null);
     setSelectedFolderId("root");
     setShowFolderResourcePicker(false);
   };
@@ -3057,6 +3928,11 @@ function SubjectClassWorkPage({
     updateResources(nextResources);
     setDraftResources(nextResources);
     setHasUnsavedResourceChanges(false);
+    setShowFolderResourcePicker(false);
+  };
+  const removeAssessment = (assessmentId: string) => {
+    updateAssessments(assessments.filter((assessment) => assessment.id !== assessmentId));
+    setSelectedAssessmentId(null);
     setShowFolderResourcePicker(false);
   };
   const moveResourceToFolder = (resourceId: string, folderId: string) => {
@@ -3082,6 +3958,28 @@ function SubjectClassWorkPage({
     }
     setExpandedFolderIds((current) => new Set(current).add(folderId));
     setDragTargetFolderId(null);
+  };
+  const moveAssessmentToFolder = (assessmentId: string, folderId: string) => {
+    const nextFolderId = folderId === "root" ? undefined : folderId;
+    updateAssessments(assessments.map((assessment) => {
+      if (assessment.id !== assessmentId) {
+        return assessment;
+      }
+      const { folderId: _previousFolderId, ...assessmentWithoutFolder } = assessment;
+      return nextFolderId ? { ...assessmentWithoutFolder, folderId: nextFolderId } : assessmentWithoutFolder;
+    }));
+    if (selectedAssessmentId === assessmentId) {
+      setSelectedFolderId(folderId);
+    }
+    setExpandedFolderIds((current) => new Set(current).add(folderId));
+    setDragTargetFolderId(null);
+  };
+  const addAssessmentResource = () => {
+    const assessment = createAssessment(assessmentScales, activeFolderId);
+    updateAssessments([...assessments, ensureAssessmentGrades(assessment, subjectClassStudents)]);
+    setSelectedAssessmentId(assessment.id);
+    setSelectedResourceId(null);
+    setShowFolderResourcePicker(false);
   };
   const resourceTypePicker = (
     <div className="resource-type-grid">
@@ -3113,6 +4011,13 @@ function SubjectClassWorkPage({
           <small>Upload an image and add learner-facing context.</small>
         </span>
       </button>
+      <button className="resource-type-card" type="button" onClick={addAssessmentResource}>
+        <ClipboardCheck size={34} />
+        <span>
+          <strong>Assessment</strong>
+          <small>Create work to grade students and provide feedback.</small>
+        </span>
+      </button>
     </div>
   );
   const handleFolderDragOver = (event: React.DragEvent, folderId: string) => {
@@ -3122,7 +4027,12 @@ function SubjectClassWorkPage({
   };
   const handleFolderDrop = (event: React.DragEvent, folderId: string) => {
     event.preventDefault();
-    const resourceId = event.dataTransfer.getData("text/plain");
+    const itemId = event.dataTransfer.getData("text/plain");
+    if (itemId.startsWith("assessment:")) {
+      moveAssessmentToFolder(itemId.replace("assessment:", ""), folderId);
+      return;
+    }
+    const resourceId = itemId.replace("resource:", "");
     if (resourceId) {
       moveResourceToFolder(resourceId, folderId);
     }
@@ -3130,6 +4040,7 @@ function SubjectClassWorkPage({
   const renderResourceTree = (parentId: string, depth = 0): React.ReactNode => {
     const children = folders.filter((folder) => (folder.parentId ?? "root") === parentId);
     const childResources = resources.filter((resource) => (resource.folderId ?? "root") === parentId);
+    const childAssessments = assessments.filter((assessment) => (assessment.folderId ?? "root") === parentId);
     const isExpanded = expandedFolderIds.has(parentId);
     return (
       <>
@@ -3138,13 +4049,14 @@ function SubjectClassWorkPage({
             {children.map((folder) => {
               const folderIsExpanded = expandedFolderIds.has(folder.id);
               const folderHasChildren = folders.some((childFolder) => (childFolder.parentId ?? "root") === folder.id)
-                || resources.some((resource) => (resource.folderId ?? "root") === folder.id);
+                || resources.some((resource) => (resource.folderId ?? "root") === folder.id)
+                || assessments.some((assessment) => (assessment.folderId ?? "root") === folder.id);
               return (
                 <div key={folder.id}>
                   <div
                     className={[
                       "resource-tree-item",
-                      !selectedResource && selectedFolderId === folder.id ? "active-resource-tree-item" : "",
+                      !selectedResource && !selectedAssessment && selectedFolderId === folder.id ? "active-resource-tree-item" : "",
                       dragTargetFolderId === folder.id ? "active-resource-drop-target" : "",
                     ].filter(Boolean).join(" ")}
                     onDragLeave={() => setDragTargetFolderId(null)}
@@ -3191,7 +4103,7 @@ function SubjectClassWorkPage({
                 onDragEnd={() => setDragTargetFolderId(null)}
                 onDragStart={(event) => {
                   event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", resource.id);
+                  event.dataTransfer.setData("text/plain", `resource:${resource.id}`);
                 }}
                 style={{ "--tree-depth": depth } as React.CSSProperties}
               >
@@ -3200,7 +4112,29 @@ function SubjectClassWorkPage({
                 <span>{resource.title}</span>
               </button>
             ))}
-            {parentId !== "root" || (children.length === 0 && childResources.length === 0) ? (
+            {childAssessments.map((assessment) => (
+              <button
+                className={[
+                  "resource-tree-item resource-tree-resource",
+                  selectedAssessmentId === assessment.id ? "active-resource-tree-item" : "",
+                ].filter(Boolean).join(" ")}
+                draggable
+                key={assessment.id}
+                type="button"
+                onClick={() => selectAssessment(assessment)}
+                onDragEnd={() => setDragTargetFolderId(null)}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", `assessment:${assessment.id}`);
+                }}
+                style={{ "--tree-depth": depth } as React.CSSProperties}
+              >
+                <span className="resource-tree-spacer" />
+                <ClipboardCheck size={16} />
+                <span>{assessment.title}</span>
+              </button>
+            ))}
+            {parentId !== "root" || (children.length === 0 && childResources.length === 0 && childAssessments.length === 0) ? (
               <button
                 className="resource-tree-item resource-tree-add-resource"
                 type="button"
@@ -3283,12 +4217,77 @@ function SubjectClassWorkPage({
         </section>
       ) : null}
       {activeWorkTab === "status" ? (
-        <section className="subject-overview-panel">
-          <div className="empty-editor-state">
-            <h3>Status and follow-up</h3>
-            <p>No status tools have been added yet.</p>
-          </div>
+        <section className="status-followup-page">
+          <nav className="status-followup-menu" aria-label="Status and follow-up sections">
+            <button
+              className={activeStatusView === "assessmentRecord" && !selectedGradeAssessmentId ? "active-status-followup-menu-item" : ""}
+              type="button"
+              onClick={() => {
+                setActiveStatusView("assessmentRecord");
+                setSelectedGradeAssessmentId(null);
+              }}
+            >
+              Assessment record
+            </button>
+          </nav>
+          {selectedGradeAssessmentId ? (() => {
+            const selectedAssessment = assessments.find((assessment) => assessment.id === selectedGradeAssessmentId);
+            if (!selectedAssessment) {
+              return (
+                <div className="empty-editor-state">
+                  <h3>Assessment not found</h3>
+                  <button className="secondary-action" type="button" onClick={() => setSelectedGradeAssessmentId(null)}>Back to assessment record</button>
+                </div>
+              );
+            }
+            return (
+              <div className="assessment-detail-page">
+                <div className="editor-back-row">
+                  <button className="secondary-action" type="button" onClick={() => setSelectedGradeAssessmentId(null)}>
+                    Back to assessment record
+                  </button>
+                </div>
+                <AssessmentResourceDetail
+                  assessment={selectedAssessment}
+                  scale={assessmentScales.find((scale) => scale.id === selectedAssessment.scaleId) ?? assessmentScales[0]}
+                  students={subjectClassStudents}
+                  onEdit={() => {
+                    const assessmentIndex = assessments.findIndex((item) => item.id === selectedAssessment.id);
+                    setDraftAssessment(ensureAssessmentGrades(selectedAssessment, subjectClassStudents));
+                    setAssessmentModalIndex(assessmentIndex >= 0 ? assessmentIndex : null);
+                  }}
+                  onRemove={() => {
+                    updateAssessments(assessments.filter((assessment) => assessment.id !== selectedAssessment.id));
+                    setSelectedGradeAssessmentId(null);
+                  }}
+                  onGradeChange={(studentId, patch) => updateAssessmentGrade(selectedAssessment.id, studentId, patch)}
+                />
+              </div>
+            );
+          })() : (
+            <GradebookView
+              assessments={assessments}
+              scales={assessmentScales}
+              students={subjectClassStudents}
+              onOpenAssessment={setSelectedGradeAssessmentId}
+            />
+          )}
         </section>
+      ) : null}
+      {assessmentModalIndex !== undefined ? (
+        <RegistrationModal
+          title={assessmentModalIndex === null ? "Create assessment" : "Edit assessment"}
+          eyebrow="Assessment"
+          submitLabel={assessmentModalIndex === null ? "Create assessment" : "Save assessment"}
+          onClose={() => setAssessmentModalIndex(undefined)}
+          onSubmit={saveDraftAssessment}
+        >
+          <AssessmentFields
+            assessment={draftAssessment}
+            scales={assessmentScales}
+            onChange={setDraftAssessment}
+          />
+        </RegistrationModal>
       ) : null}
       {activeWorkTab === "students" ? (
         <section className="subject-overview-panel">
@@ -3302,13 +4301,27 @@ function SubjectClassWorkPage({
               <p>Add students to this subject class from the Classes section.</p>
             </div>
           ) : (
-            <div className="subject-student-list">
-              {subjectClassStudents.map((student) => (
-                <article className="subject-student-card" key={student.id}>
-                  <strong>{student.firstName} {student.lastName}</strong>
-                  <span>{student.gender || "No gender recorded"}{student.guardians?.[0]?.name ? ` · Guardian: ${student.guardians[0].name}` : ""}</span>
-                </article>
-              ))}
+            <div className="data-table-wrap">
+              <table className="data-table subject-student-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Gender</th>
+                    <th>Guardian</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subjectClassStudents.map((student) => (
+                    <tr key={student.id}>
+                      <td><strong>{student.firstName} {student.lastName}</strong></td>
+                      <td>{student.gender || "Not set"}</td>
+                      <td>{student.guardians?.[0]?.name || "No guardian recorded"}</td>
+                      <td>{student.description || "No description"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -3325,7 +4338,7 @@ function SubjectClassWorkPage({
           <div
             className={[
               "resource-tree-item",
-              !selectedResource && selectedFolderId === "root" ? "active-resource-tree-item" : "",
+              !selectedResource && !selectedAssessment && selectedFolderId === "root" ? "active-resource-tree-item" : "",
               dragTargetFolderId === "root" ? "active-resource-drop-target" : "",
             ].filter(Boolean).join(" ")}
             onDragLeave={() => setDragTargetFolderId(null)}
@@ -3356,7 +4369,7 @@ function SubjectClassWorkPage({
 
         <section className="resource-main-panel">
           <div className="resource-main-heading">
-            {!selectedResource ? (
+            {!selectedResource && !selectedAssessment ? (
               <div>
                 <p className="eyebrow">{activeFolder ? "Folder" : "Course root"}</p>
                 {activeFolder ? (
@@ -3384,7 +4397,7 @@ function SubjectClassWorkPage({
                 )}
               </div>
             ) : null}
-            {activeFolder && !selectedResource ? (
+            {activeFolder && !selectedResource && !selectedAssessment ? (
               <div className="resource-detail-actions">
                 {editingFolderId === activeFolder.id ? (
                   <button className="secondary-action" type="button" onClick={() => setEditingFolderId(null)}>
@@ -3466,6 +4479,19 @@ function SubjectClassWorkPage({
                   </div>
                 )}
               </article>
+            ) : selectedAssessment ? (
+              <AssessmentResourceDetail
+                assessment={selectedAssessment}
+                scale={assessmentScales.find((scale) => scale.id === selectedAssessment.scaleId) ?? assessmentScales[0]}
+                students={subjectClassStudents}
+                onEdit={() => {
+                  const assessmentIndex = assessments.findIndex((assessment) => assessment.id === selectedAssessment.id);
+                  setDraftAssessment(ensureAssessmentGrades(selectedAssessment, subjectClassStudents));
+                  setAssessmentModalIndex(assessmentIndex >= 0 ? assessmentIndex : null);
+                }}
+                onRemove={() => removeAssessment(selectedAssessment.id)}
+                onGradeChange={(studentId, patch) => updateAssessmentGrade(selectedAssessment.id, studentId, patch)}
+              />
             ) : (
               <>
                 <div className="resource-save-row">
@@ -3474,34 +4500,48 @@ function SubjectClassWorkPage({
                     Save resource changes
                   </button>
                 </div>
-                {!activeFolder && childFolders.length === 0 && folderResources.length === 0 ? resourceTypePicker : null}
-                {activeFolder && childFolders.length === 0 && folderResources.length === 0 ? resourceTypePicker : null}
-                {childFolders.map((folder) => (
-                  <article className="resource-list-item folder-resource-item" key={folder.id}>
-                    <button type="button" onClick={() => selectTreeFolder(folder.id)}>
-                      <Folder size={22} />
-                      <strong>{folder.name}</strong>
-                    </button>
-                  </article>
-                ))}
-                {folderResources.map((resource) => (
-                  <article className="resource-list-item folder-resource-item resource-preview-item" key={resource.id}>
-                    <button type="button" onClick={() => selectResource(resource)}>
-                      {resource.type === "note" ? <FileText size={22} /> : resource.type === "link" ? <Link2 size={22} /> : <Image size={22} />}
-                      <span>
-                        <strong>{resource.title}</strong>
-                        <small>
-                          {resource.type === "link"
-                            ? resource.url || "No URL added"
-                            : resource.type === "picture"
-                              ? resource.description || "No description yet"
-                              : resource.body || "No note content yet"}
-                        </small>
-                      </span>
-                    </button>
-                  </article>
-                ))}
-                {(childFolders.length > 0 || folderResources.length > 0) && showFolderResourcePicker ? resourceTypePicker : null}
+                {showFolderResourcePicker || (childFolders.length === 0 && folderResources.length === 0 && folderAssessments.length === 0) ? (
+                  resourceTypePicker
+                ) : (
+                  <>
+                    {childFolders.map((folder) => (
+                      <article className="resource-list-item folder-resource-item" key={folder.id}>
+                        <button type="button" onClick={() => selectTreeFolder(folder.id)}>
+                          <Folder size={22} />
+                          <strong>{folder.name}</strong>
+                        </button>
+                      </article>
+                    ))}
+                    {folderResources.map((resource) => (
+                      <article className="resource-list-item folder-resource-item resource-preview-item" key={resource.id}>
+                        <button type="button" onClick={() => selectResource(resource)}>
+                          {resource.type === "note" ? <FileText size={22} /> : resource.type === "link" ? <Link2 size={22} /> : <Image size={22} />}
+                          <span>
+                            <strong>{resource.title}</strong>
+                            <small>
+                              {resource.type === "link"
+                                ? resource.url || "No URL added"
+                                : resource.type === "picture"
+                                  ? resource.description || "No description yet"
+                                  : resource.body || "No note content yet"}
+                            </small>
+                          </span>
+                        </button>
+                      </article>
+                    ))}
+                    {folderAssessments.map((assessment) => (
+                      <article className="resource-list-item folder-resource-item resource-preview-item" key={assessment.id}>
+                        <button type="button" onClick={() => selectAssessment(assessment)}>
+                          <ClipboardCheck size={22} />
+                          <span>
+                            <strong>{assessment.title}</strong>
+                            <small>{assessment.date} · {assessment.format} · {assessment.requiresTurnIn ? "Turn-in required" : "No turn-in required"}</small>
+                          </span>
+                        </button>
+                      </article>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -3828,6 +4868,7 @@ function RegistrationModal({
   title,
   eyebrow,
   submitLabel,
+  wide = false,
   onClose,
   onSubmit,
   children,
@@ -3835,13 +4876,14 @@ function RegistrationModal({
   title: string;
   eyebrow: string;
   submitLabel: string;
+  wide?: boolean;
   onClose: () => void;
   onSubmit: () => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="staff-modal" role="dialog" aria-modal="true" aria-labelledby="staff-modal-title">
+      <section className={`staff-modal ${wide ? "wide-staff-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby="staff-modal-title">
         <div className="staff-modal-header">
           <div>
             <p className="eyebrow">{eyebrow}</p>
@@ -4203,6 +5245,14 @@ function formatDate(date: string) {
 
 function splitCsv(value: string) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function parsePercentageInput(value: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(parsed)));
 }
 
 function mergeUnique(values: string[]) {

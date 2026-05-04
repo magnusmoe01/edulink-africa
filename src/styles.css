@@ -492,6 +492,10 @@ textarea {
   box-shadow: 0 20px 70px rgba(15, 31, 29, 0.28);
 }
 
+.wide-staff-modal {
+  width: min(100%, 1120px);
+}
+
 .staff-modal-header,
 .staff-modal-actions {
   display: flex;
@@ -507,6 +511,82 @@ textarea {
 .staff-modal-body {
   display: grid;
   gap: 14px;
+}
+
+.student-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.student-modal-main,
+.student-subject-class-picker {
+  display: grid;
+  gap: 14px;
+}
+
+.student-subject-class-picker {
+  max-height: min(680px, 68vh);
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f9fbfa;
+  overflow: hidden;
+}
+
+.student-subject-class-picker h3,
+.student-subject-class-picker p {
+  margin: 0;
+}
+
+.student-subject-class-picker p {
+  margin-top: 4px;
+  color: #5d6862;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.student-subject-class-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.student-subject-class-list {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.student-subject-class-option {
+  display: flex;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+  font-weight: 400;
+}
+
+.student-subject-class-option input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #1f6857;
+}
+
+.student-subject-class-option span {
+  display: grid;
+  gap: 4px;
+}
+
+.student-subject-class-option small {
+  color: #5d6862;
+  line-height: 1.4;
 }
 
 .staff-modal-actions {
@@ -1651,14 +1731,16 @@ textarea {
 
 .editor-section-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 220px));
+  justify-content: start;
   gap: 14px;
 }
 
 .editor-section-card {
   display: grid;
   gap: 8px;
-  min-height: 132px;
+  width: 220px;
+  min-height: 144px;
   border: 1px solid #d8e0dc;
   border-radius: 8px;
   padding: 18px;
@@ -1700,6 +1782,40 @@ textarea {
   border: 1px solid #d8e0dc;
   border-radius: 8px;
   background: #f9fbfa;
+}
+
+.calendar-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+
+.calendar-editor-main,
+.calendar-admin-preview {
+  display: grid;
+  gap: 14px;
+}
+
+.calendar-admin-preview {
+  position: sticky;
+  top: 18px;
+}
+
+.calendar-admin-preview .info-panel {
+  box-shadow: none;
+}
+
+.mini-preview-label {
+  color: #5d6862;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.calendar-preview-empty {
+  margin-top: 18px;
 }
 
 .nested-editor-grid {
@@ -1808,6 +1924,34 @@ textarea {
   width: 150px;
 }
 
+.calendar-table th,
+.calendar-table td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.calendar-table td {
+  vertical-align: middle;
+}
+
+.calendar-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.calendar-edit-action {
+  border: 0;
+  padding: 0;
+  color: #1f6857;
+  background: transparent;
+  font-weight: 800;
+}
+
+.calendar-edit-action:hover {
+  text-decoration: underline;
+}
+
 .table-color-swatch {
   display: inline-block;
   width: 16px;
@@ -1877,7 +2021,8 @@ textarea {
 .school-work-card-grid {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(210px, 210px));
+  justify-content: start;
   gap: 14px;
 }
 
@@ -1886,6 +2031,7 @@ textarea {
   display: grid;
   gap: 8px;
   align-content: start;
+  width: 210px;
   aspect-ratio: 1 / 1;
   min-height: 0;
   border: 1px solid rgba(23, 33, 30, 0.12);
@@ -1996,23 +2142,398 @@ textarea {
   font-weight: 800;
 }
 
-.subject-student-list {
-  display: grid;
-  gap: 10px;
+.subject-student-table {
+  min-width: 760px;
 }
 
-.subject-student-card {
+.scale-editor-list,
+.assessment-level-list,
+.assessment-list,
+.assessment-workspace {
   display: grid;
-  gap: 5px;
+  gap: 16px;
+}
+
+.assessment-scale-toggle-list {
+  display: grid;
+  gap: 12px;
+}
+
+.assessment-scale-toggle {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   border: 1px solid #d8e0dc;
   border-radius: 8px;
-  padding: 14px 16px;
+  padding: 14px;
   background: #fff;
 }
 
-.subject-student-card span {
+.assessment-scale-toggle strong,
+.assessment-scale-toggle small {
+  display: block;
+}
+
+.assessment-scale-toggle small {
+  margin-top: 4px;
   color: #5d6862;
   line-height: 1.45;
+}
+
+.assessment-scale-panel,
+.assessment-card {
+  display: grid;
+  gap: 16px;
+}
+
+.scale-heading,
+.assessment-level-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 120px) minmax(110px, 140px) minmax(220px, 1.4fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.scale-heading {
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px);
+}
+
+.scale-actions,
+.assessment-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.required-scale-level-label {
+  align-self: end;
+  color: #5d6862;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.assessment-card {
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+}
+
+.assessment-card h3,
+.assessment-card p {
+  margin: 0;
+}
+
+.assessment-meta-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.assessment-meta-list p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #5d6862;
+  line-height: 1.45;
+}
+
+.assessment-meta-list svg {
+  flex: 0 0 auto;
+  color: #7b8681;
+}
+
+.assessment-card-heading span,
+.assessment-description {
+  color: #5d6862;
+  line-height: 1.5;
+}
+
+.assessment-grade-table {
+  min-width: 1120px;
+}
+
+.assessment-grade-table th:nth-child(2),
+.assessment-grade-table td:nth-child(2) {
+  width: 150px;
+}
+
+.assessment-grade-table th:nth-last-child(2),
+.assessment-grade-table td:nth-last-child(2) {
+  width: 150px;
+}
+
+.assessment-grade-table textarea {
+  min-height: 70px;
+  padding: 9px 10px;
+}
+
+.assessment-grade-table select,
+.assessment-grade-table input,
+.assessment-grade-table textarea {
+  min-width: 0;
+}
+
+.assessment-student-table {
+  min-width: 620px;
+}
+
+.assessment-student-table tbody tr {
+  cursor: pointer;
+}
+
+.assessment-student-table tbody tr:hover td,
+.assessment-student-table tbody tr.active-assessment-student-row td {
+  background: #f3f7f5;
+}
+
+.assessment-student-button {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.assessment-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #33403b;
+  background: #eef2f0;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.assessment-status-not-submitted {
+  color: #7a2e2e;
+  background: #f8e8e6;
+}
+
+.assessment-status-submitted {
+  color: #6a4b13;
+  background: #fbf1d7;
+}
+
+.assessment-status-not-graded {
+  color: #4f5b56;
+  background: #edf1ef;
+}
+
+.assessment-status-graded {
+  color: #1f5b46;
+  background: #dff2e8;
+}
+
+.assessment-student-detail-page {
+  display: grid;
+  gap: 16px;
+  padding-top: 10px;
+}
+
+.assessment-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  color: #1f6857;
+  background: transparent;
+  font-weight: 800;
+}
+
+.assessment-back-link:hover {
+  text-decoration: underline;
+}
+
+.assessment-student-grading-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.assessment-student-grading-panel h3 {
+  margin: 0;
+}
+
+.status-followup-page,
+.assessment-detail-page {
+  display: grid;
+  gap: 16px;
+}
+
+.status-followup-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #fff;
+}
+
+.status-followup-menu button {
+  min-height: 48px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 0 10px;
+  color: #47554f;
+  background: transparent;
+  font-weight: 800;
+}
+
+.status-followup-menu button:hover,
+.status-followup-menu button.active-status-followup-menu-item {
+  color: #16201d;
+  border-bottom-color: #d7a63c;
+}
+
+.assessment-record-page {
+  display: grid;
+  gap: 0;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.assessment-record-heading,
+.assessment-record-search-row,
+.assessment-record-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+}
+
+.assessment-record-heading {
+  justify-content: space-between;
+  background: #f0f1f0;
+}
+
+.assessment-record-heading h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 500;
+}
+
+.assessment-record-menu-button {
+  color: #5a496d;
+  border-color: #a58bbd;
+}
+
+.assessment-record-search-row {
+  justify-content: flex-end;
+  min-height: 80px;
+  border-bottom: 1px solid #e3e7e4;
+}
+
+.assessment-record-search {
+  position: relative;
+  width: min(100%, 280px);
+}
+
+.assessment-record-search input {
+  height: 34px;
+  padding: 7px 38px 7px 12px;
+}
+
+.assessment-record-search svg {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  color: #8a918e;
+}
+
+.assessment-record-toolbar {
+  border-bottom: 1px solid #e3e7e4;
+  flex-wrap: wrap;
+}
+
+.assessment-record-toolbar .primary-action {
+  background: #00885f;
+}
+
+.assessment-record-sort {
+  margin-left: auto;
+}
+
+.assessment-record-table-wrap {
+  border: 0;
+  border-radius: 0;
+}
+
+.gradebook-table {
+  min-width: 1120px;
+}
+
+.gradebook-table th,
+.gradebook-table td {
+  border-right: 1px solid #e3e7e4;
+}
+
+.gradebook-table th:first-child,
+.gradebook-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 100px;
+  min-width: 100px;
+  max-width: 100px;
+  background: #fff;
+}
+
+.gradebook-table th:first-child {
+  z-index: 2;
+  background: #f4f7f5;
+}
+
+.gradebook-table th:nth-child(2),
+.gradebook-table td:nth-child(2) {
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
+  text-align: center;
+  background: #f7f8f7;
+}
+
+.gradebook-table td:not(:first-child) {
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
+  color: #5b6862;
+  font-weight: 500;
+  text-align: center;
+}
+
+.gradebook-assessment-button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: #4c5551;
+  text-align: center;
+  background: transparent;
+}
+
+.gradebook-assessment-button:hover strong {
+  text-decoration: underline;
+}
+
+.gradebook-assessment-button span {
+  color: #66736d;
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .school-work-detail-shell {
@@ -2067,7 +2588,7 @@ textarea {
 .resource-tree-item {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
   min-height: 36px;
@@ -2109,7 +2630,7 @@ textarea {
 .resource-tree-toggle,
 .resource-tree-label {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   border: 0;
   color: inherit;
   background: transparent;
@@ -2183,9 +2704,9 @@ textarea {
 
 .resource-tree-item span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .resource-tree-item:hover,
@@ -2263,7 +2784,8 @@ textarea {
 
 .resource-type-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 240px));
+  justify-content: start;
   gap: 12px;
 }
 
@@ -2271,7 +2793,8 @@ textarea {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 14px;
-  min-height: 104px;
+  width: 240px;
+  min-height: 116px;
   border: 1px solid #d8e0dc;
   border-radius: 8px;
   padding: 16px;
@@ -2552,9 +3075,26 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .student-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-admin-preview {
+    position: static;
+  }
+
   .resource-tree-panel {
     border-right: 0;
     border-bottom: 1px solid #d8e0dc;
+  }
+
+  .scale-heading,
+  .assessment-level-row {
+    grid-template-columns: 1fr;
   }
 
   .resource-list-item-heading {

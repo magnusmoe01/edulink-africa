@@ -70,6 +70,7 @@ export type SubjectClass = {
   studentIds: string[];
   courseMaterials?: CourseMaterial[];
   assignments?: Assignment[];
+  assessments?: Assessment[];
   resourceFolders?: ResourceFolder[];
   resources?: SubjectResource[];
   announcements?: SubjectClassAnnouncement[];
@@ -89,6 +90,45 @@ export type Assignment = {
   title: string;
   dueDate?: string;
   description: string;
+};
+
+export type AssessmentScaleLevel = {
+  id: string;
+  value: string;
+  minPercentage: number;
+  description?: string;
+};
+
+export type AssessmentScale = {
+  id: string;
+  name: string;
+  levels: AssessmentScaleLevel[];
+};
+
+export type SchoolWorkSettings = {
+  enabledGlobalAssessmentScaleIds: string[];
+  customAssessmentScales: AssessmentScale[];
+};
+
+export type AssessmentGrade = {
+  studentId: string;
+  levelId?: string;
+  score?: string;
+  feedback?: string;
+  submitted?: boolean;
+  gradedAt?: string;
+};
+
+export type Assessment = {
+  id: string;
+  title: string;
+  date: string;
+  requiresTurnIn: boolean;
+  format: string;
+  scaleId: string;
+  folderId?: string;
+  description?: string;
+  grades: AssessmentGrade[];
 };
 
 export type ResourceFolder = {
@@ -157,6 +197,7 @@ export type School = {
   students: Student[];
   subjects: Subject[];
   subjectClasses?: SubjectClass[];
+  schoolWorkSettings?: SchoolWorkSettings;
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
   updatedAt?: string;
@@ -169,6 +210,11 @@ export type GlobalAboutPage = AboutPage & {
 export type GlobalAboutConfig = {
   categories: AboutCategory[];
   pages: GlobalAboutPage[];
+  updatedAt?: string;
+};
+
+export type GlobalSchoolWorkConfig = {
+  assessmentScales: AssessmentScale[];
   updatedAt?: string;
 };
 

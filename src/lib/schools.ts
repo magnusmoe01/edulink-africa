@@ -1,12 +1,18 @@
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, deleteDoc } from "firebase/firestore";
 import { db, hasFirebaseConfig } from "./firebase";
 import { sampleSchool } from "../data/sampleSchool";
-import type { AdminProfile, GlobalAboutConfig, School } from "../types";
+import type { AdminProfile, GlobalAboutConfig, GlobalSchoolWorkConfig, School } from "../types";
 
 const COLLECTION = "schools";
 const GLOBAL_ABOUT_KEY = "edulink-global-about";
 const GLOBAL_CONFIG_COLLECTION = "platformConfig";
 const GLOBAL_ABOUT_DOC = "globalAbout";
+const GLOBAL_SCHOOL_WORK_KEY = "edulink-global-schoolwork";
+const GLOBAL_SCHOOL_WORK_DOC = "globalSchoolWork";
+const REQUIRED_ASSESSMENT_SCALE_LEVELS = [
+  { id: "excused", value: "Excused", minPercentage: 0, description: "" },
+  { id: "assessed", value: "Assessed", minPercentage: 0, description: "" },
+] as const;
 
 export const defaultGlobalAboutConfig: GlobalAboutConfig = {
   categories: [{ id: "global-about", title: "About" }],
@@ -19,6 +25,22 @@ export const defaultGlobalAboutConfig: GlobalAboutConfig = {
       headerImage: "",
       body: "",
       kind: "staffDirectory",
+    },
+  ],
+};
+
+export const defaultGlobalSchoolWorkConfig: GlobalSchoolWorkConfig = {
+  assessmentScales: [
+    {
+      id: "proficiency",
+      name: "Proficiency scale",
+      levels: [
+        { id: "exceeding", value: "4", minPercentage: 90, description: "Consistently exceeds the expected standard." },
+        { id: "meeting", value: "3", minPercentage: 70, description: "Meets the expected standard." },
+        { id: "approaching", value: "2", minPercentage: 50, description: "Approaching the expected standard." },
+        { id: "beginning", value: "1", minPercentage: 0, description: "Needs support to reach the expected standard." },
+        ...REQUIRED_ASSESSMENT_SCALE_LEVELS,
+      ],
     },
   ],
 };
@@ -142,6 +164,42 @@ export async function saveGlobalAboutConfig(config: GlobalAboutConfig): Promise<
   );
 }
 
+export async function getGlobalSchoolWorkConfig(): Promise<GlobalSchoolWorkConfig> {
+  if (!hasFirebaseConfig || !db) {
+    const raw = window.localStorage.getItem(GLOBAL_SCHOOL_WORK_KEY);
+    return raw ? normalizeGlobalSchoolWorkConfig(JSON.parse(raw) as GlobalSchoolWorkConfig) : defaultGlobalSchoolWorkConfig;
+  }
+
+  const snapshot = await getDoc(doc(db, GLOBAL_CONFIG_COLLECTION, GLOBAL_SCHOOL_WORK_DOC));
+  if (!snapshot.exists()) {
+    return defaultGlobalSchoolWorkConfig;
+  }
+
+  return normalizeGlobalSchoolWorkConfig(snapshot.data() as GlobalSchoolWorkConfig);
+}
+
+export async function saveGlobalSchoolWorkConfig(config: GlobalSchoolWorkConfig): Promise<void> {
+  const normalizedConfig = normalizeGlobalSchoolWorkConfig(config);
+  if (!hasFirebaseConfig || !db) {
+    window.localStorage.setItem(GLOBAL_SCHOOL_WORK_KEY, JSON.stringify({ ...normalizedConfig, updatedAt: new Date().toISOString() }));
+    return;
+  }
+
+  const configData = removeUndefinedValues({
+    ...normalizedConfig,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await setDoc(
+    doc(db, GLOBAL_CONFIG_COLLECTION, GLOBAL_SCHOOL_WORK_DOC),
+    {
+      ...configData,
+      serverUpdatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export function getLocalSchool(id: string): School | undefined {
   const raw = window.localStorage.getItem(`edulink-school-${id}`);
   return raw ? normalizeSchool(JSON.parse(raw) as School) : undefined;
@@ -200,12 +258,30 @@ function normalizeSchool(school: School): School {
       ...subjectClass,
       courseMaterials: subjectClass.courseMaterials ?? [],
       assignments: subjectClass.assignments ?? [],
+      assessments: (subjectClass.assessments ?? []).map((assessment) => ({
+        ...assessment,
+        requiresTurnIn: assessment.requiresTurnIn ?? true,
+        grades: assessment.grades ?? [],
+      })),
       resourceFolders: subjectClass.resourceFolders ?? [],
       resources: subjectClass.resources ?? [],
       announcements: subjectClass.announcements ?? [],
     })),
     aboutCategories: school.aboutCategories ?? [],
     aboutPages: school.aboutPages ?? [],
+    schoolWorkSettings: {
+      enabledGlobalAssessmentScaleIds: school.schoolWorkSettings?.enabledGlobalAssessmentScaleIds ?? defaultGlobalSchoolWorkConfig.assessmentScales.map((scale) => scale.id),
+      customAssessmentScales: (school.schoolWorkSettings?.customAssessmentScales ?? []).map((scale, scaleIndex) => ({
+        id: scale.id || `school-scale-${scaleIndex + 1}`,
+        name: scale.name || "Assessment scale",
+        levels: ensureRequiredAssessmentScaleLevels((scale.levels ?? []).map((level, levelIndex) => ({
+          id: level.id || `level-${levelIndex + 1}`,
+          value: level.value || String(levelIndex + 1),
+          minPercentage: typeof level.minPercentage === "number" ? clampPercentage(level.minPercentage) : inferDefaultPercentage(levelIndex),
+          description: level.description ?? "",
+        }))),
+      })),
+    },
   };
 }
 
@@ -223,6 +299,46 @@ function normalizeGlobalAboutConfig(config: GlobalAboutConfig): GlobalAboutConfi
       kind: page.kind ?? "richText",
     })),
   };
+}
+
+function normalizeGlobalSchoolWorkConfig(config: GlobalSchoolWorkConfig): GlobalSchoolWorkConfig {
+  const assessmentScales = config.assessmentScales?.length ? config.assessmentScales : defaultGlobalSchoolWorkConfig.assessmentScales;
+
+  return {
+    ...config,
+    assessmentScales: assessmentScales.map((scale, scaleIndex) => ({
+      id: scale.id || `scale-${scaleIndex + 1}`,
+      name: scale.name || "Assessment scale",
+      levels: ensureRequiredAssessmentScaleLevels((scale.levels?.length ? scale.levels : defaultGlobalSchoolWorkConfig.assessmentScales[0].levels).map((level, levelIndex) => ({
+        id: level.id || `level-${levelIndex + 1}`,
+        value: level.value || ("label" in level && typeof level.label === "string" ? level.label : String(levelIndex + 1)),
+        minPercentage: typeof level.minPercentage === "number" ? clampPercentage(level.minPercentage) : inferDefaultPercentage(levelIndex),
+        description: level.description ?? "",
+      }))),
+    })),
+    updatedAt: config.updatedAt,
+  };
+}
+
+function ensureRequiredAssessmentScaleLevels(levels: Array<{ id: string; value: string; minPercentage: number; description?: string }>) {
+  const requiredIds = new Set(REQUIRED_ASSESSMENT_SCALE_LEVELS.map((level) => level.id));
+  const customLevels = levels.filter((level) => !requiredIds.has(level.id));
+  const requiredLevels = REQUIRED_ASSESSMENT_SCALE_LEVELS.map((requiredLevel) => {
+    const existingLevel = levels.find((level) => level.id === requiredLevel.id);
+    return existingLevel
+      ? { ...existingLevel, minPercentage: 0, value: existingLevel.value || requiredLevel.value }
+      : { ...requiredLevel };
+  });
+
+  return [...customLevels, ...requiredLevels];
+}
+
+function clampPercentage(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function inferDefaultPercentage(levelIndex: number) {
+  return [90, 70, 50, 0][levelIndex] ?? 0;
 }
 
 function removeUndefinedValues<T>(value: T): T {
