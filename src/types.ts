@@ -16,6 +16,7 @@ export type StaffMember = {
   name: string;
   role: string;
   category?: "Teacher" | "Administration" | "Other";
+  categories?: Array<"Teacher" | "Administration" | "Other">;
   phone?: string;
   email?: string;
   photoUrl?: string;
@@ -35,6 +36,8 @@ export type Student = {
   firstName: string;
   lastName: string;
   classId: string;
+  email?: string;
+  photoUrl?: string;
   dateOfBirth?: string;
   gender?: string;
   description?: string;
@@ -68,12 +71,18 @@ export type SubjectClass = {
   baseClassId?: string;
   teacherName?: string;
   studentIds: string[];
+  studentActivity?: SubjectClassStudentActivity[];
   courseMaterials?: CourseMaterial[];
   assignments?: Assignment[];
   assessments?: Assessment[];
   resourceFolders?: ResourceFolder[];
   resources?: SubjectResource[];
   announcements?: SubjectClassAnnouncement[];
+};
+
+export type SubjectClassStudentActivity = {
+  studentId: string;
+  lastOpenedAt?: string;
 };
 
 export type CourseMaterial = {
@@ -108,6 +117,11 @@ export type AssessmentScale = {
 export type SchoolWorkSettings = {
   enabledGlobalAssessmentScaleIds: string[];
   customAssessmentScales: AssessmentScale[];
+};
+
+export type LoginSettings = {
+  emailPasswordEnabled: boolean;
+  emailLinkEnabled: boolean;
 };
 
 export type AssessmentGrade = {
@@ -182,6 +196,7 @@ export type School = {
   phone: string;
   email: string;
   adminEmails: string[];
+  loginSettings?: LoginSettings;
   principal: string;
   showWebsite?: boolean;
   heroImage: string;

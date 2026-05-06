@@ -82,7 +82,7 @@ export async function listSchools(): Promise<School[]> {
   return schools.length ? schools : [sampleSchool];
 }
 
-export async function getAdminProfile(uid: string): Promise<AdminProfile | null> {
+export async function getAdminProfile(uid: string, email?: string | null): Promise<AdminProfile | null> {
   if (!hasFirebaseConfig || !db) {
     return {
       uid,
@@ -93,6 +93,19 @@ export async function getAdminProfile(uid: string): Promise<AdminProfile | null>
   }
 
   const snapshot = await getDoc(doc(db, "schoolAdmins", uid));
+
+  if (!snapshot.exists() && email) {
+    const emailSnapshot = await getDoc(doc(db, "schoolAdmins", getAdminEmailProfileId(email)));
+    if (emailSnapshot.exists()) {
+      const data = emailSnapshot.data();
+      return {
+        uid,
+        email: typeof data.email === "string" ? data.email : email,
+        schoolIds: Array.isArray(data.schoolIds) ? data.schoolIds.filter((id): id is string => typeof id === "string") : [],
+        superAdmin: data.superAdmin === true,
+      };
+    }
+  }
 
   if (!snapshot.exists()) {
     return null;
@@ -107,6 +120,30 @@ export async function getAdminProfile(uid: string): Promise<AdminProfile | null>
   };
 }
 
+export async function saveSuperAdminProfile(email: string): Promise<void> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail.includes("@")) {
+    throw new Error("Enter a valid email address.");
+  }
+
+  if (!hasFirebaseConfig || !db) {
+    return;
+  }
+
+  await setDoc(
+    doc(db, "schoolAdmins", getAdminEmailProfileId(normalizedEmail)),
+    {
+      uid: getAdminEmailProfileId(normalizedEmail),
+      email: normalizedEmail,
+      schoolIds: [],
+      superAdmin: true,
+      updatedAt: new Date().toISOString(),
+      serverUpdatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export async function saveSchool(school: School): Promise<void> {
   if (!hasFirebaseConfig || !db) {
     window.localStorage.setItem(`edulink-school-${school.id}`, JSON.stringify(school));
@@ -115,6 +152,8 @@ export async function saveSchool(school: School): Promise<void> {
 
   const schoolData = removeUndefinedValues({
     ...school,
+    schoolWorkStaffEmails: (school.staff ?? []).map((member) => member.email?.toLowerCase()).filter(Boolean),
+    schoolWorkStudentEmails: (school.students ?? []).map((student) => student.email?.toLowerCase()).filter(Boolean),
     updatedAt: new Date().toISOString(),
   });
 
@@ -219,17 +258,24 @@ function normalizeSchool(school: School): School {
     ...school,
     showWebsite: school.showWebsite ?? true,
     adminEmails: school.adminEmails ?? [],
+    loginSettings: {
+      emailPasswordEnabled: school.loginSettings?.emailPasswordEnabled ?? true,
+      emailLinkEnabled: school.loginSettings?.emailLinkEnabled ?? false,
+    },
     values: school.values ?? [],
     announcements: school.announcements ?? [],
     calendar: school.calendar ?? [],
     staff: (school.staff ?? []).map((member) => ({
       ...member,
+      categories: member.categories?.length ? member.categories : [member.category ?? "Other"],
       visibleOnHomePage: member.visibleOnHomePage ?? true,
       visibleOnStaffPage: member.visibleOnStaffPage ?? true,
     })),
     classes: school.classes ?? [],
     students: (school.students ?? []).map((student) => ({
       ...student,
+      email: student.email ?? "",
+      photoUrl: student.photoUrl ?? "",
       guardians: student.guardians ?? (student.guardianName || student.guardianEmail ? [{
         id: `guardian-${student.id}`,
         name: student.guardianName ?? "",
@@ -266,6 +312,7 @@ function normalizeSchool(school: School): School {
       resourceFolders: subjectClass.resourceFolders ?? [],
       resources: subjectClass.resources ?? [],
       announcements: subjectClass.announcements ?? [],
+      studentActivity: (subjectClass.studentActivity ?? []).filter((activity) => typeof activity.studentId === "string"),
     })),
     aboutCategories: school.aboutCategories ?? [],
     aboutPages: school.aboutPages ?? [],
@@ -283,6 +330,10 @@ function normalizeSchool(school: School): School {
       })),
     },
   };
+}
+
+function getAdminEmailProfileId(email: string) {
+  return `email-${email.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`;
 }
 
 function normalizeGlobalAboutConfig(config: GlobalAboutConfig): GlobalAboutConfig {

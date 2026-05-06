@@ -5,13 +5,17 @@ service cloud.firestore {
     match /schools/{schoolId} {
       allow read: if true;
       allow create: if isSchoolAdmin(schoolId) || isValidPublicSchoolCreate(schoolId);
-      allow update: if isSchoolAdmin(schoolId);
+      allow update: if isSchoolAdmin(schoolId) || isSchoolWorkUser(schoolId);
       allow delete: if isSchoolAdmin(schoolId);
     }
 
     match /schoolAdmins/{adminId} {
-      allow read: if request.auth != null && request.auth.uid == adminId;
-      allow write: if false;
+      allow read: if request.auth != null && (
+        request.auth.uid == adminId
+        || resource.data.email == request.auth.token.email
+        || isSuperAdmin()
+      );
+      allow write: if isSuperAdmin();
     }
 
     match /platformConfig/{configId} {
@@ -46,6 +50,16 @@ service cloud.firestore {
         && request.auth.token.email in get(/databases/$(database)/documents/schools/$(schoolId)).data.adminEmails;
     }
 
+    function isSchoolWorkUser(schoolId) {
+      let school = get(/databases/$(database)/documents/schools/$(schoolId)).data;
+      return request.auth != null
+        && exists(/databases/$(database)/documents/schools/$(schoolId))
+        && (
+          (school.keys().hasAny(["schoolWorkStaffEmails"]) && request.auth.token.email in school.schoolWorkStaffEmails)
+          || (school.keys().hasAny(["schoolWorkStudentEmails"]) && request.auth.token.email in school.schoolWorkStudentEmails)
+        );
+    }
+
     function isValidPublicSchoolCreate(schoolId) {
       return !exists(/databases/$(database)/documents/schools/$(schoolId))
         && request.resource.data.id == schoolId
@@ -72,9 +86,13 @@ service cloud.firestore {
           "phone",
           "email",
           "adminEmails",
+          "loginSettings",
           "principal",
+          "showWebsite",
           "heroImage",
           "logoUrl",
+          "mainColor",
+          "subColor",
           "about",
           "values",
           "announcements",
@@ -83,8 +101,12 @@ service cloud.firestore {
           "classes",
           "students",
           "subjects",
+          "subjectClasses",
+          "schoolWorkSettings",
           "aboutCategories",
           "aboutPages",
+          "schoolWorkStaffEmails",
+          "schoolWorkStudentEmails",
           "updatedAt",
           "serverUpdatedAt"
         ]);

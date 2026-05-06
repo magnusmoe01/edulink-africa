@@ -64,6 +64,14 @@ a {
   letter-spacing: 0;
 }
 
+.school-brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #fff;
+}
+
 .topnav,
 .school-nav,
 .admin-actions {
@@ -801,6 +809,21 @@ textarea {
   text-underline-offset: 4px;
 }
 
+.school-header-session {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  color: #33403b;
+  font-weight: 800;
+}
+
+.school-header-session .secondary-action {
+  border-color: #cad5d0;
+  color: #1f3d36;
+  background: #fff;
+}
+
 .school-hero {
   min-height: 470px;
   display: flex;
@@ -1455,6 +1478,32 @@ textarea {
   gap: 16px;
 }
 
+.login-methods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.login-methods button {
+  border: 1px solid #cad5d0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #33403b;
+  background: #fff;
+  font-weight: 800;
+}
+
+.login-methods button.active-login-method {
+  border-color: #1f6857;
+  color: #123b32;
+  background: #eef7f3;
+}
+
+.login-methods button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .login-mode-button {
   border-color: #cad5d0;
   color: #1f3d36;
@@ -1825,6 +1874,34 @@ textarea {
   align-items: start;
 }
 
+.classes-editor-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.class-management-panel {
+  min-width: 0;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  background: #f9fbfa;
+}
+
+.class-management-heading {
+  margin: 0;
+}
+
+.class-management-heading h3 {
+  font-size: 1.05rem;
+}
+
+.class-management-heading .secondary-action {
+  border: 1px solid #d7a63c;
+  color: #16201d;
+  background: #fff;
+}
+
 .sub-editor-panel {
   display: grid;
   gap: 14px;
@@ -1875,6 +1952,11 @@ textarea {
   border-collapse: collapse;
 }
 
+.class-table,
+.subject-class-table {
+  min-width: 700px;
+}
+
 .data-table th,
 .data-table td {
   padding: 13px 14px;
@@ -1907,6 +1989,16 @@ textarea {
   margin-top: 4px;
   color: #66736d;
   font-size: 0.82rem;
+}
+
+.student-table-photo {
+  display: block;
+  width: 54px;
+  height: 54px;
+  margin-top: 8px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #e3ece7;
 }
 
 .student-table th:last-child,
@@ -1967,7 +2059,8 @@ textarea {
 }
 
 .subject-work-nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 18px;
   padding: 0 18px;
@@ -1980,7 +2073,17 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-right: 12px;
+  min-width: 0;
+}
+
+.subject-work-nav-tabs {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+}
+
+.subject-work-nav-spacer {
   min-width: 0;
 }
 
@@ -2159,7 +2262,8 @@ textarea {
   gap: 12px;
 }
 
-.assessment-scale-toggle {
+.assessment-scale-toggle,
+.login-format-option {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2170,12 +2274,26 @@ textarea {
   background: #fff;
 }
 
+.login-format-list {
+  display: grid;
+  gap: 12px;
+}
+
+.editor-helper-text {
+  margin: 0;
+  color: #5d6862;
+  line-height: 1.55;
+}
+
 .assessment-scale-toggle strong,
-.assessment-scale-toggle small {
+.assessment-scale-toggle small,
+.login-format-option strong,
+.login-format-option small {
   display: block;
 }
 
-.assessment-scale-toggle small {
+.assessment-scale-toggle small,
+.login-format-option small {
   margin-top: 4px;
   color: #5d6862;
   line-height: 1.45;
@@ -2190,7 +2308,7 @@ textarea {
 .scale-heading,
 .assessment-level-row {
   display: grid;
-  grid-template-columns: minmax(90px, 120px) minmax(110px, 140px) minmax(220px, 1.4fr) auto;
+  grid-template-columns: minmax(150px, 220px) minmax(110px, 140px) minmax(160px, 0.9fr) auto;
   gap: 12px;
   align-items: end;
 }
@@ -3061,6 +3179,7 @@ textarea {
   .admin-layout,
   .editor-grid,
   .nested-editor-grid,
+  .classes-editor-layout,
   .about-category-section,
   .superadmin-layout,
   .school-directory-row {
