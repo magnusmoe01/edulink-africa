@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, deleteDoc } from "firebase/firestore";
 import { db, hasFirebaseConfig } from "./firebase";
 import { sampleSchool } from "../data/sampleSchool";
-import type { AdminProfile, GlobalAboutConfig, GlobalSchoolWorkConfig, School } from "../types";
+import type { AdminProfile, AssessmentScale, GlobalAboutConfig, GlobalSchoolWorkConfig, School } from "../types";
 
 const COLLECTION = "schools";
 const GLOBAL_ABOUT_KEY = "edulink-global-about";
@@ -13,6 +13,25 @@ const REQUIRED_ASSESSMENT_SCALE_LEVELS = [
   { id: "excused", value: "Excused", minPercentage: 0, description: "" },
   { id: "assessed", value: "Assessed", minPercentage: 0, description: "" },
 ] as const;
+
+function createPercentageAssessmentScale(): AssessmentScale {
+  return {
+    id: "percentage-0-100",
+    name: "Percentage 0-100",
+    levels: [
+      ...Array.from({ length: 101 }, (_, index) => {
+        const value = 100 - index;
+        return {
+          id: `percentage-${value}`,
+          value: String(value),
+          minPercentage: value,
+          description: `${value}%`,
+        };
+      }),
+      ...REQUIRED_ASSESSMENT_SCALE_LEVELS,
+    ],
+  };
+}
 
 export const defaultGlobalAboutConfig: GlobalAboutConfig = {
   categories: [{ id: "global-about", title: "About" }],
@@ -42,6 +61,7 @@ export const defaultGlobalSchoolWorkConfig: GlobalSchoolWorkConfig = {
         ...REQUIRED_ASSESSMENT_SCALE_LEVELS,
       ],
     },
+    createPercentageAssessmentScale(),
   ],
 };
 
@@ -271,7 +291,11 @@ function normalizeSchool(school: School): School {
       visibleOnHomePage: member.visibleOnHomePage ?? true,
       visibleOnStaffPage: member.visibleOnStaffPage ?? true,
     })),
-    classes: school.classes ?? [],
+    gradeLevels: normalizeGradeLevels(school),
+    classes: (school.classes ?? []).map((classGroup) => ({
+      ...classGroup,
+      gradeLevelId: classGroup.gradeLevelId ?? getGradeLevelIdForGrade(classGroup.grade),
+    })),
     students: (school.students ?? []).map((student) => ({
       ...student,
       email: student.email ?? "",
@@ -302,6 +326,7 @@ function normalizeSchool(school: School): School {
       }));
     })).map((subjectClass) => ({
       ...subjectClass,
+      gradeLevelId: subjectClass.gradeLevelId ?? (school.classes ?? []).find((classGroup) => classGroup.id === subjectClass.baseClassId)?.gradeLevelId ?? getGradeLevelIdForGrade((school.classes ?? []).find((classGroup) => classGroup.id === subjectClass.baseClassId)?.grade),
       courseMaterials: subjectClass.courseMaterials ?? [],
       assignments: subjectClass.assignments ?? [],
       assessments: (subjectClass.assessments ?? []).map((assessment) => ({
@@ -332,6 +357,31 @@ function normalizeSchool(school: School): School {
   };
 }
 
+function normalizeGradeLevels(school: School) {
+  const existingLevels = school.gradeLevels ?? [];
+  const classGrades = (school.classes ?? [])
+    .map((classGroup) => classGroup.grade?.trim())
+    .filter((grade): grade is string => Boolean(grade));
+  const currentYear = String(new Date().getFullYear());
+  const derivedLevels = classGrades.map((grade) => ({
+    id: getGradeLevelIdForGrade(grade),
+    grade,
+    year: currentYear,
+  }));
+  const levels = [...existingLevels, ...derivedLevels.filter((derived) => !existingLevels.some((level) => level.id === derived.id))];
+
+  return levels.map((level, index) => ({
+    id: level.id || `grade-${index + 1}`,
+    grade: level.grade || String(index + 1),
+    year: level.year || currentYear,
+  }));
+}
+
+function getGradeLevelIdForGrade(grade?: string) {
+  const normalizedGrade = grade?.trim() || "grade";
+  return `grade-${normalizedGrade.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${new Date().getFullYear()}`;
+}
+
 function getAdminEmailProfileId(email: string) {
   return `email-${email.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`;
 }
@@ -354,19 +404,26 @@ function normalizeGlobalAboutConfig(config: GlobalAboutConfig): GlobalAboutConfi
 
 function normalizeGlobalSchoolWorkConfig(config: GlobalSchoolWorkConfig): GlobalSchoolWorkConfig {
   const assessmentScales = config.assessmentScales?.length ? config.assessmentScales : defaultGlobalSchoolWorkConfig.assessmentScales;
+  const scalesWithDefaults = [
+    ...assessmentScales,
+    ...defaultGlobalSchoolWorkConfig.assessmentScales.filter((defaultScale) => !assessmentScales.some((scale) => scale.id === defaultScale.id)),
+  ];
 
   return {
     ...config,
-    assessmentScales: assessmentScales.map((scale, scaleIndex) => ({
+    assessmentScales: scalesWithDefaults.map((scale, scaleIndex) => {
+      const defaultScale = defaultGlobalSchoolWorkConfig.assessmentScales.find((item) => item.id === scale.id) ?? defaultGlobalSchoolWorkConfig.assessmentScales[0];
+      return {
       id: scale.id || `scale-${scaleIndex + 1}`,
       name: scale.name || "Assessment scale",
-      levels: ensureRequiredAssessmentScaleLevels((scale.levels?.length ? scale.levels : defaultGlobalSchoolWorkConfig.assessmentScales[0].levels).map((level, levelIndex) => ({
+      levels: ensureRequiredAssessmentScaleLevels((scale.levels?.length ? scale.levels : defaultScale.levels).map((level, levelIndex) => ({
         id: level.id || `level-${levelIndex + 1}`,
         value: level.value || ("label" in level && typeof level.label === "string" ? level.label : String(levelIndex + 1)),
         minPercentage: typeof level.minPercentage === "number" ? clampPercentage(level.minPercentage) : inferDefaultPercentage(levelIndex),
         description: level.description ?? "",
       }))),
-    })),
+    };
+    }),
     updatedAt: config.updatedAt,
   };
 }

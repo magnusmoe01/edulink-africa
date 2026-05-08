@@ -64,16 +64,30 @@ export const sampleSchool: School = {
       email: "admissions@nairobi-community.example",
     },
   ],
+  gradeLevels: [
+    {
+      id: "grade-1-2026",
+      grade: "1",
+      year: "2026",
+    },
+    {
+      id: "grade-2-2026",
+      grade: "2",
+      year: "2026",
+    },
+  ],
   classes: [
     {
       id: "grade-1",
       name: "Grade 1",
+      gradeLevelId: "grade-1-2026",
       grade: "1",
       teacher: "Grace Wanjiku",
     },
     {
       id: "grade-2",
       name: "Grade 2",
+      gradeLevelId: "grade-2-2026",
       grade: "2",
       teacher: "Peter Kamau",
     },
@@ -101,6 +115,7 @@ export const sampleSchool: School = {
       id: "math-grade-1",
       name: "Math - Grade 1",
       subjectId: "math",
+      gradeLevelId: "grade-1-2026",
       baseClassId: "grade-1",
       teacherName: "Grace Wanjiku",
       studentIds: ["student-001"],

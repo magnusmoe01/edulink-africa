@@ -27,8 +27,15 @@ export type StaffMember = {
 export type ClassGroup = {
   id: string;
   name: string;
+  gradeLevelId?: string;
   grade?: string;
   teacher?: string;
+};
+
+export type SchoolGradeLevel = {
+  id: string;
+  grade: string;
+  year: string;
 };
 
 export type Student = {
@@ -68,6 +75,7 @@ export type SubjectClass = {
   id: string;
   name: string;
   subjectId: string;
+  gradeLevelId?: string;
   baseClassId?: string;
   teacherName?: string;
   studentIds: string[];
@@ -131,6 +139,7 @@ export type AssessmentGrade = {
   feedback?: string;
   submitted?: boolean;
   gradedAt?: string;
+  gradedBy?: string;
 };
 
 export type Assessment = {
@@ -208,6 +217,7 @@ export type School = {
   announcements: NewsItem[];
   calendar: CalendarItem[];
   staff: StaffMember[];
+  gradeLevels?: SchoolGradeLevel[];
   classes: ClassGroup[];
   students: Student[];
   subjects: Subject[];

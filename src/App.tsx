@@ -32,7 +32,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCalendarDays, faClipboardCheck, faRulerCombined } from "@fortawesome/free-solid-svg-icons";
+import { faCalendarDays, faClipboardCheck, faRulerCombined, faUser } from "@fortawesome/free-solid-svg-icons";
 import { sampleSchool } from "./data/sampleSchool";
 import {
   defaultGlobalAboutConfig,
@@ -52,9 +52,9 @@ import {
 } from "./lib/schools";
 import { hasFirebaseConfig } from "./lib/firebase";
 import { auth } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolGradeLevel, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
 
-type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "classes" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings" | "loginSettings";
+type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings" | "loginSettings";
 type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork" | "settings";
 
 const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
@@ -102,7 +102,9 @@ const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "news", label: "News" },
   { id: "calendar", label: "Calendar" },
   { id: "staff", label: "Staff" },
+  { id: "grades", label: "Grades and years" },
   { id: "classes", label: "Classes" },
+  { id: "subjectClasses", label: "Subject classes" },
   { id: "subjects", label: "Subjects" },
   { id: "students", label: "Students" },
   { id: "schoolWorkSettings", label: "School work settings" },
@@ -131,8 +133,8 @@ const editorCategories: Array<{
   {
     id: "academics",
     label: "Academics",
-    description: "Main classes, subject classes, and subject catalog.",
-    sections: ["classes", "subjects"],
+    description: "Grades, classes, subject classes, and subject catalog.",
+    sections: ["grades", "classes", "subjectClasses", "subjects"],
   },
   {
     id: "schoolWork",
@@ -297,6 +299,7 @@ function LandingPage() {
       email: `office@${slug}.example`,
       adminEmails: [normalizedEmail],
       showWebsite: true,
+      gradeLevels: [],
       classes: [],
       students: [],
       subjects: [],
@@ -896,6 +899,8 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
   const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const [activeSubjectClassId, setActiveSubjectClassId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("subjectClassId"));
 
   useEffect(() => {
@@ -920,6 +925,22 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
       void getAdminProfile(nextUser.uid, nextUser.email).then(setProfile);
     });
   }, []);
+
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return undefined;
+    }
+
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      if (accountMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setAccountMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+  }, [accountMenuOpen]);
 
   useSchoolDocumentBrand(school);
 
@@ -963,9 +984,24 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
         hideNav={Boolean(identity)}
         actions={identity ? (
           <div className="school-header-session">
-            <span>Signed in as {identity.label}</span>
-            {isSimulating ? <button className="secondary-action" type="button" onClick={exitSimulation}>Exit simulation</button> : null}
-            {hasFirebaseConfig && user ? <button className="secondary-action" type="button" onClick={() => void logout()}>Sign out</button> : null}
+            <div className="school-account-menu" ref={accountMenuRef}>
+              <button
+                className="school-account-button"
+                type="button"
+                onClick={() => setAccountMenuOpen((open) => !open)}
+                aria-expanded={accountMenuOpen}
+                aria-haspopup="menu"
+              >
+                <FontAwesomeIcon icon={faUser} />
+                <span>{identity.label}</span>
+              </button>
+              {accountMenuOpen ? (
+                <div className="school-account-dropdown" role="menu">
+                  {isSimulating ? <button type="button" role="menuitem" onClick={exitSimulation}>Exit simulation</button> : null}
+                  {hasFirebaseConfig && user ? <button type="button" role="menuitem" onClick={() => void logout()}>Sign out</button> : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : undefined}
       />
@@ -995,6 +1031,7 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
             assessmentScales={effectiveScales}
             accessLevel={identity.role === "student" ? "student" : identity.role === "teacher" ? "teacher" : identity.role === "viewer" ? "viewer" : "admin"}
             activeStudentId={identity.role === "student" ? identity.studentId : undefined}
+            graderLabel={identity.label}
             onBack={backToSubjectClasses}
             onChange={saveNextSubjectClass}
           />
@@ -1008,7 +1045,7 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
           />
         )}
       </section>
-      <SchoolFooter school={school} />
+      {identity?.role === "student" || identity?.role === "teacher" ? null : <SchoolFooter school={school} />}
     </main>
   );
 }
@@ -1426,6 +1463,7 @@ function SuperAdminPage() {
       email: `office@${id}.example`,
       adminEmails: [],
       showWebsite: true,
+      gradeLevels: [],
       classes: [],
       students: [],
       subjects: [],
@@ -1614,7 +1652,7 @@ function SuperAdminPage() {
                   <p>Add another platform superadmin by email. They must sign in with this exact email address.</p>
                 </div>
               </div>
-              <div className="create-school-box">
+              <div className="create-school-box superadmin-add-box">
                 <TextInput label="Superadmin email" value={newSuperAdminEmail} onChange={setNewSuperAdminEmail} />
                 <button className="primary-action" type="button" onClick={() => void addSuperAdmin()}>
                   Add superadmin
@@ -1858,42 +1896,62 @@ function GlobalSchoolWorkEditor({
                 onChange={(id) => updateScale(scaleIndex, { ...scale, id: slugifySchoolName(id) })}
               />
             </div>
-            <div className="assessment-level-list">
-              {scale.levels.map((level, levelIndex) => (
-                <div className="assessment-level-row" key={level.id}>
-                  <TextInput
-                    label="Value"
-                    value={level.value}
-                    onChange={(value) => updateScale(scaleIndex, {
-                      ...scale,
-                      levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value } : item),
-                    })}
-                  />
-                  <TextInput
-                    label="Minimum %"
-                    value={String(level.minPercentage ?? 0)}
-                    onChange={(minPercentage) => updateScale(scaleIndex, {
-                      ...scale,
-                      levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: parsePercentageInput(minPercentage) } : item),
-                    })}
-                  />
-                  <TextInput
-                    label="Description"
-                    value={level.description ?? ""}
-                    onChange={(description) => updateScale(scaleIndex, {
-                      ...scale,
-                      levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, description } : item),
-                    })}
-                  />
-                  <button
-                    className="remove-button"
-                    type="button"
-                    onClick={() => updateScale(scaleIndex, { ...scale, levels: scale.levels.filter((_, index) => index !== levelIndex) })}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
+            <div className="assessment-level-table-wrap">
+              <table className="assessment-level-table">
+                <thead>
+                  <tr>
+                    <th>Value</th>
+                    <th>Minimum %</th>
+                    <th>Description</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scale.levels.map((level, levelIndex) => (
+                    <tr key={level.id}>
+                      <td>
+                        <input
+                          aria-label="Value"
+                          value={level.value}
+                          onChange={(event) => updateScale(scaleIndex, {
+                            ...scale,
+                            levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value: event.target.value } : item),
+                          })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          aria-label="Minimum percentage"
+                          value={String(level.minPercentage ?? 0)}
+                          onChange={(event) => updateScale(scaleIndex, {
+                            ...scale,
+                            levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: parsePercentageInput(event.target.value) } : item),
+                          })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          aria-label="Description"
+                          value={level.description ?? ""}
+                          onChange={(event) => updateScale(scaleIndex, {
+                            ...scale,
+                            levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, description: event.target.value } : item),
+                          })}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          className="remove-button"
+                          type="button"
+                          onClick={() => updateScale(scaleIndex, { ...scale, levels: scale.levels.filter((_, index) => index !== levelIndex) })}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
             <div className="scale-actions">
               <button
@@ -2016,8 +2074,18 @@ function SchoolEditor({
     visibleOnHomePage: true,
     visibleOnStaffPage: true,
   });
-  const createClassGroup = (): ClassGroup => ({ id: `class-${Date.now()}`, name: "New class", grade: "", teacher: "" });
   const classes = school.classes ?? [];
+  const gradeLevels = school.gradeLevels ?? [];
+  const gradeOptions = [
+    { value: "", label: "Select grade and year" },
+    ...gradeLevels.map((gradeLevel) => ({ value: gradeLevel.id, label: formatGradeLevel(gradeLevel) })),
+  ];
+  const getGradeLevel = (gradeLevelId?: string) => gradeLevels.find((gradeLevel) => gradeLevel.id === gradeLevelId);
+  const createGradeLevel = (): SchoolGradeLevel => ({ id: `grade-${Date.now()}`, grade: "", year: String(new Date().getFullYear()) });
+  const createClassGroup = (): ClassGroup => {
+    const gradeLevel = gradeLevels[0];
+    return { id: `class-${Date.now()}`, name: "New class", gradeLevelId: gradeLevel?.id ?? "", grade: gradeLevel?.grade ?? "", teacher: "" };
+  };
   const students = school.students ?? [];
   const subjects = school.subjects ?? [];
   const subjectClasses = school.subjectClasses ?? [];
@@ -2061,6 +2129,7 @@ function SchoolEditor({
   const [newsModalIndex, setNewsModalIndex] = useState<number | null | undefined>(undefined);
   const [calendarModalIndex, setCalendarModalIndex] = useState<number | null | undefined>(undefined);
   const [staffModalIndex, setStaffModalIndex] = useState<number | null | undefined>(undefined);
+  const [gradeLevelModalIndex, setGradeLevelModalIndex] = useState<number | null | undefined>(undefined);
   const [classModalIndex, setClassModalIndex] = useState<number | null | undefined>(undefined);
   const [subjectClassModalIndex, setSubjectClassModalIndex] = useState<number | null | undefined>(undefined);
   const [subjectModalIndex, setSubjectModalIndex] = useState<number | null | undefined>(undefined);
@@ -2068,6 +2137,7 @@ function SchoolEditor({
   const [draftNews, setDraftNews] = useState<NewsItem>(() => createNewsItem());
   const [draftCalendar, setDraftCalendar] = useState<CalendarItem>(() => createCalendarItem());
   const [draftStaff, setDraftStaff] = useState<StaffMember>(() => createStaffMember());
+  const [draftGradeLevel, setDraftGradeLevel] = useState<SchoolGradeLevel>(() => createGradeLevel());
   const [draftClass, setDraftClass] = useState<ClassGroup>(() => createClassGroup());
   const [draftStudent, setDraftStudent] = useState<Student>(() => createStudent());
   const [draftStudentSubjectClassIds, setDraftStudentSubjectClassIds] = useState<string[]>([]);
@@ -2107,9 +2177,10 @@ function SchoolEditor({
   });
   const createSubjectClass = (): SubjectClass => ({
     id: `subject-class-${Date.now()}`,
-    name: subjects[0] && classes[0] ? `${subjects[0].name} - ${classes[0].name}` : "New subject class",
-    subjectId: subjects[0]?.id ?? "",
-    baseClassId: classes[0]?.id ?? "",
+    name: "New subject class",
+    subjectId: "",
+    gradeLevelId: "",
+    baseClassId: "",
     teacherName: "",
     studentIds: [],
   });
@@ -2150,10 +2221,32 @@ function SchoolEditor({
       </div>
     </>
   );
+  const renderGradeLevelFields = (item: SchoolGradeLevel, update: (item: SchoolGradeLevel) => void) => (
+    <>
+      <TextInput
+        label="Grade"
+        value={item.grade}
+        onChange={(grade) => update({ ...item, grade, id: slugifyGradeLevel(grade, item.year) })}
+      />
+      <TextInput
+        label="Year"
+        value={item.year}
+        onChange={(year) => update({ ...item, year, id: slugifyGradeLevel(item.grade, year) })}
+      />
+    </>
+  );
   const renderClassFields = (item: ClassGroup, update: (item: ClassGroup) => void) => (
     <>
       <TextInput label="Main class name" value={item.name} onChange={(value) => update({ ...item, name: value })} />
-      <TextInput label="Grade" value={item.grade ?? ""} onChange={(value) => update({ ...item, grade: value })} />
+      <SelectInput
+        label="Grade and year"
+        value={item.gradeLevelId ?? ""}
+        options={gradeOptions}
+        onChange={(gradeLevelId) => {
+          const gradeLevel = getGradeLevel(gradeLevelId);
+          update({ ...item, gradeLevelId, grade: gradeLevel?.grade ?? "" });
+        }}
+      />
       <SelectInput
         label="Class teacher"
         value={item.teacher ?? ""}
@@ -2195,6 +2288,14 @@ function SchoolEditor({
   const renderSubjectClassFields = (item: SubjectClass, update: (item: SubjectClass) => void) => {
     const selectedStudents = students.filter((student) => item.studentIds.includes(student.id));
     const baseClassStudents = students.filter((student) => student.classId === item.baseClassId);
+    const getSubjectClassName = (subjectId: string, gradeLevelId: string | undefined) => {
+      const subjectName = subjects.find((subject) => subject.id === subjectId)?.name;
+      const gradeLabel = formatGradeLevel(getGradeLevel(gradeLevelId));
+      if (subjectName && gradeLabel) {
+        return `${subjectName} - Grade ${gradeLabel}`;
+      }
+      return subjectName || (gradeLabel ? `Grade ${gradeLabel}` : "New subject class");
+    };
 
     return (
       <>
@@ -2207,11 +2308,10 @@ function SchoolEditor({
             ...subjects.map((subject) => ({ value: subject.id, label: subject.name })),
           ]}
           onChange={(value) => {
-            const subject = subjects.find((currentSubject) => currentSubject.id === value);
             update({
               ...item,
               subjectId: value,
-              name: item.name === "New subject class" && subject ? subject.name : item.name,
+              name: getSubjectClassName(value, item.gradeLevelId),
             });
           }}
         />
@@ -2222,7 +2322,26 @@ function SchoolEditor({
             { value: "", label: "Mixed classes" },
             ...classes.map((classGroup) => ({ value: classGroup.id, label: classGroup.name })),
           ]}
-          onChange={(value) => update({ ...item, baseClassId: value })}
+          onChange={(value) => {
+            const classGroup = classes.find((currentClass) => currentClass.id === value);
+            const gradeLevelId = classGroup?.gradeLevelId ?? item.gradeLevelId ?? "";
+            update({
+              ...item,
+              baseClassId: value,
+              gradeLevelId,
+              name: getSubjectClassName(item.subjectId, gradeLevelId),
+            });
+          }}
+        />
+        <SelectInput
+          label="Grade and year"
+          value={item.gradeLevelId ?? ""}
+          options={gradeOptions}
+          onChange={(gradeLevelId) => update({
+            ...item,
+            gradeLevelId,
+            name: getSubjectClassName(item.subjectId, gradeLevelId),
+          })}
         />
         <SelectInput
           label="Teacher"
@@ -2255,13 +2374,20 @@ function SchoolEditor({
     .map((subjectClass) => subjectClass.id);
   const getRelevantSubjectClassIds = (classId: string, useGrade: boolean) => {
     const selectedClass = classes.find((classGroup) => classGroup.id === classId);
+    const selectedGradeLevelId = selectedClass?.gradeLevelId;
     const selectedGrade = selectedClass?.grade?.trim();
     return subjectClasses
       .filter((subjectClass) => {
         if (!classId) {
           return false;
         }
-        if (!useGrade || !selectedGrade) {
+        if (!useGrade) {
+          return subjectClass.baseClassId === classId;
+        }
+        if (selectedGradeLevelId) {
+          return subjectClass.gradeLevelId === selectedGradeLevelId;
+        }
+        if (!selectedGrade) {
           return subjectClass.baseClassId === classId;
         }
         const subjectBaseClass = classes.find((classGroup) => classGroup.id === subjectClass.baseClassId);
@@ -2757,10 +2883,43 @@ function SchoolEditor({
           </EditorPanel>
         ) : null}
 
-        {activeSection === "classes" ? (
-          <EditorPanel title="Classes">
+        {activeSection === "grades" || activeSection === "classes" || activeSection === "subjectClasses" ? (
+          <EditorPanel title={activeSection === "grades" ? "Grades and years" : activeSection === "subjectClasses" ? "Subject classes" : "Classes"}>
             <div className="classes-editor-layout">
-              <section className="sub-editor-panel class-management-panel">
+              {activeSection === "grades" ? <section className="sub-editor-panel class-management-panel">
+                <div className="section-heading class-management-heading">
+                  <h3>Grades and years</h3>
+                  <button
+                    className="secondary-action repeater-add-button"
+                    type="button"
+                    onClick={() => {
+                      setDraftGradeLevel(createGradeLevel());
+                      setGradeLevelModalIndex(null);
+                    }}
+                  >
+                    Add grade
+                  </button>
+                </div>
+                <GradeLevelTable
+                  gradeLevels={gradeLevels}
+                  classes={classes}
+                  subjectClasses={subjectClasses}
+                  onEdit={(gradeLevel, index) => {
+                    setDraftGradeLevel(gradeLevel);
+                    setGradeLevelModalIndex(index);
+                  }}
+                  onRemove={(index) => {
+                    const removedGradeLevelId = gradeLevels[index]?.id;
+                    updateSchool({
+                      ...school,
+                      gradeLevels: gradeLevels.filter((_, currentIndex) => currentIndex !== index),
+                      classes: classes.map((classGroup) => classGroup.gradeLevelId === removedGradeLevelId ? { ...classGroup, gradeLevelId: "", grade: "" } : classGroup),
+                      subjectClasses: subjectClasses.map((subjectClass) => subjectClass.gradeLevelId === removedGradeLevelId ? { ...subjectClass, gradeLevelId: "" } : subjectClass),
+                    });
+                  }}
+                />
+              </section> : null}
+              {activeSection === "classes" ? <section className="sub-editor-panel class-management-panel">
                 <div className="section-heading class-management-heading">
                   <h3>Classes</h3>
                   <button
@@ -2776,6 +2935,7 @@ function SchoolEditor({
                 </div>
                 <ClassTable
                   classes={classes}
+                  gradeLevels={gradeLevels}
                   students={students}
                   subjectClasses={subjectClasses}
                   onEdit={(classGroup, index) => {
@@ -2799,8 +2959,8 @@ function SchoolEditor({
                     });
                   }}
                 />
-              </section>
-              <section className="sub-editor-panel class-management-panel">
+              </section> : null}
+              {activeSection === "subjectClasses" ? <section className="sub-editor-panel class-management-panel">
                 <div className="section-heading class-management-heading">
                   <h3>Subject classes</h3>
                   <button
@@ -2823,6 +2983,7 @@ function SchoolEditor({
                 ) : (
                   <SubjectClassTable
                     classes={classes}
+                    gradeLevels={gradeLevels}
                     subjectClasses={subjectClasses}
                     subjects={subjects}
                     onEdit={(subjectClass, index) => {
@@ -2832,8 +2993,35 @@ function SchoolEditor({
                     onRemove={(index) => setField("subjectClasses", subjectClasses.filter((_, currentIndex) => currentIndex !== index))}
                   />
                 )}
-              </section>
+              </section> : null}
             </div>
+            {gradeLevelModalIndex !== undefined ? (
+              <RegistrationModal
+                title={gradeLevelModalIndex === null ? "Create grade" : "Edit grade"}
+                eyebrow="Grades"
+                submitLabel={gradeLevelModalIndex === null ? "Add grade" : "Save grade"}
+                onClose={() => setGradeLevelModalIndex(undefined)}
+                onSubmit={() => {
+                  const nextGradeLevels = gradeLevelModalIndex === null
+                    ? [...gradeLevels, draftGradeLevel]
+                    : gradeLevels.map((current, currentIndex) => currentIndex === gradeLevelModalIndex ? draftGradeLevel : current);
+                  const previousGradeLevelId = gradeLevelModalIndex === null ? null : gradeLevels[gradeLevelModalIndex]?.id;
+                  updateSchool({
+                    ...school,
+                    gradeLevels: nextGradeLevels,
+                    classes: previousGradeLevelId
+                      ? classes.map((classGroup) => classGroup.gradeLevelId === previousGradeLevelId ? { ...classGroup, gradeLevelId: draftGradeLevel.id, grade: draftGradeLevel.grade } : classGroup)
+                      : classes,
+                    subjectClasses: previousGradeLevelId
+                      ? subjectClasses.map((subjectClass) => subjectClass.gradeLevelId === previousGradeLevelId ? { ...subjectClass, gradeLevelId: draftGradeLevel.id } : subjectClass)
+                      : subjectClasses,
+                  });
+                  setGradeLevelModalIndex(undefined);
+                }}
+              >
+                {renderGradeLevelFields(draftGradeLevel, setDraftGradeLevel)}
+              </RegistrationModal>
+            ) : null}
             {classModalIndex !== undefined ? (
               <RegistrationModal
                 title={classModalIndex === null ? "Create main class" : "Edit main class"}
@@ -2945,7 +3133,7 @@ function SchoolEditor({
                     <label className="assessment-scale-toggle" key={scale.id}>
                       <div>
                         <strong>{scale.name}</strong>
-                        <small>{scale.levels.map((level) => level.value).join(", ")}</small>
+                        <small>{formatAssessmentScaleSummary(scale)}</small>
                       </div>
                       <CheckboxInput
                         label="Enabled"
@@ -3012,6 +3200,7 @@ function SchoolEditor({
               students={students}
               assessmentScales={effectiveAssessmentScales}
               accessLevel="admin"
+              graderLabel="Admin"
               onBack={() => setActiveWorkSubjectClassId(null)}
               onChange={(nextSubjectClass) => setField("subjectClasses", subjectClasses.map((item) => item.id === nextSubjectClass.id ? nextSubjectClass : item))}
             />
@@ -3177,7 +3366,9 @@ function getEditorSectionDescription(section: EditorSection) {
     news: "School news articles and announcements.",
     calendar: "Important school dates and events.",
     staff: "Staff profiles, visibility, and contact details.",
-    classes: "Main classes and subject classes with student groups.",
+    grades: "Register grade levels and school years.",
+    classes: "Main class groups and class teachers.",
+    subjectClasses: "Subject class groups with teachers and students.",
     subjects: "Subject catalog, abbreviations, and display colors.",
     schoolWorkSettings: "Enable global assessment scales and create school-specific ones.",
     schoolWork: "Course materials and assignments for subject classes.",
@@ -3351,14 +3542,75 @@ function SubjectClassStudentPicker({
   );
 }
 
+function GradeLevelTable({
+  gradeLevels,
+  classes,
+  subjectClasses,
+  onEdit,
+  onRemove,
+}: {
+  gradeLevels: SchoolGradeLevel[];
+  classes: ClassGroup[];
+  subjectClasses: SubjectClass[];
+  onEdit: (gradeLevel: SchoolGradeLevel, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (gradeLevels.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No grades registered</h3>
+        <p>Add grades with a year before creating classes and subject classes.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="data-table-wrap">
+      <table className="data-table grade-level-table">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>Year</th>
+            <th>Main classes</th>
+            <th>Subject classes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {gradeLevels.map((gradeLevel, index) => (
+            <tr key={gradeLevel.id}>
+              <td><strong>{gradeLevel.grade || "Not set"}</strong></td>
+              <td>{gradeLevel.year || "Not set"}</td>
+              <td>{classes.filter((classGroup) => classGroup.gradeLevelId === gradeLevel.id).length}</td>
+              <td>{subjectClasses.filter((subjectClass) => subjectClass.gradeLevelId === gradeLevel.id).length}</td>
+              <td>
+                <div className="table-actions">
+                  <button className="secondary-action" type="button" onClick={() => onEdit(gradeLevel, index)}>
+                    Edit
+                  </button>
+                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ClassTable({
   classes,
+  gradeLevels,
   students,
   subjectClasses,
   onEdit,
   onRemove,
 }: {
   classes: ClassGroup[];
+  gradeLevels: SchoolGradeLevel[];
   students: Student[];
   subjectClasses: SubjectClass[];
   onEdit: (classGroup: ClassGroup, index: number) => void;
@@ -3393,7 +3645,7 @@ function ClassTable({
                 <strong>{classGroup.name}</strong>
                 <span>{classGroup.id}</span>
               </td>
-              <td>{classGroup.grade || "Not set"}</td>
+              <td>{formatGradeLevel(gradeLevels.find((gradeLevel) => gradeLevel.id === classGroup.gradeLevelId)) || classGroup.grade || "Not set"}</td>
               <td>{classGroup.teacher || "Not assigned"}</td>
               <td>{students.filter((student) => student.classId === classGroup.id).length}</td>
               <td>{subjectClasses.filter((subjectClass) => subjectClass.baseClassId === classGroup.id).length}</td>
@@ -3417,12 +3669,14 @@ function ClassTable({
 
 function SubjectClassTable({
   classes,
+  gradeLevels,
   subjectClasses,
   subjects,
   onEdit,
   onRemove,
 }: {
   classes: ClassGroup[];
+  gradeLevels: SchoolGradeLevel[];
   subjectClasses: SubjectClass[];
   subjects: Subject[];
   onEdit: (subjectClass: SubjectClass, index: number) => void;
@@ -3444,6 +3698,7 @@ function SubjectClassTable({
           <tr>
             <th>Subject class</th>
             <th>Subject</th>
+            <th>Grade/year</th>
             <th>Main class</th>
             <th>Teacher</th>
             <th>Students</th>
@@ -3458,6 +3713,7 @@ function SubjectClassTable({
                 <span>{subjectClass.id}</span>
               </td>
               <td>{subjects.find((subject) => subject.id === subjectClass.subjectId)?.name ?? "No subject"}</td>
+              <td>{formatGradeLevel(gradeLevels.find((gradeLevel) => gradeLevel.id === subjectClass.gradeLevelId)) || "Not set"}</td>
               <td>{classes.find((classGroup) => classGroup.id === subjectClass.baseClassId)?.name ?? "Mixed classes"}</td>
               <td>{subjectClass.teacherName || "Not assigned"}</td>
               <td>{subjectClass.studentIds.length}</td>
@@ -4010,6 +4266,59 @@ function GradebookView({
   );
 }
 
+function StudentGradebookView({
+  assessments,
+  scales,
+  studentId,
+}: {
+  assessments: Assessment[];
+  scales: AssessmentScale[];
+  studentId?: string;
+}) {
+  const sortedAssessments = [...assessments].sort((first, second) => {
+    const dateDifference = new Date(second.date).getTime() - new Date(first.date).getTime();
+    return dateDifference || first.title.localeCompare(second.title);
+  });
+
+  if (!studentId) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No student selected</h3>
+        <p>Sign in as a student to view grades and feedback.</p>
+      </div>
+    );
+  }
+
+  if (sortedAssessments.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No assessments yet</h3>
+        <p>Grades and feedback will appear here when assessments are added.</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="student-gradebook-page">
+      {sortedAssessments.map((assessment) => {
+        const grade = assessment.grades.find((item) => item.studentId === studentId);
+        return (
+          <article className="student-assessment-grade-card" key={assessment.id}>
+            <div className="student-assessment-grade-heading">
+              <h3>{assessment.title}</h3>
+              <strong>Grade: {getAssessmentGradeDisplay(assessment, scales, studentId)}</strong>
+              <time>Date: {assessment.date}</time>
+            </div>
+            <div className="student-assessment-feedback">
+              <p><strong>Feedback:</strong> {grade?.feedback || "No feedback yet."}</p>
+            </div>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
 function AssessmentResourceDetail({
   assessment,
   scale,
@@ -4030,10 +4339,11 @@ function AssessmentResourceDetail({
   activeStudentId?: string;
 }) {
   const grades = ensureAssessmentGrades(assessment, students).grades;
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(activeStudentId ?? students[0]?.id ?? null);
+  const isStudentSubmitMode = mode === "student-submit";
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(() => isStudentSubmitMode ? activeStudentId ?? students[0]?.id ?? null : null);
   const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null;
   const selectedGrade = selectedStudent ? grades.find((grade) => grade.studentId === selectedStudent.id) ?? { studentId: selectedStudent.id } : null;
-  const isStudentSubmitMode = mode === "student-submit";
+  const selectedGradeIsGraded = Boolean(selectedGrade?.levelId);
 
   return (
     <article className="resource-list-item resource-detail-card assessment-card">
@@ -4075,7 +4385,14 @@ function AssessmentResourceDetail({
                 <p className="eyebrow">{getAssessmentStudentStatus(assessment, selectedGrade)}</p>
                 <h3>{selectedStudent.firstName} {selectedStudent.lastName}</h3>
               </div>
-              {isStudentSubmitMode ? (
+              {isStudentSubmitMode && selectedGradeIsGraded ? (
+                <div className="student-graded-assessment-summary">
+                  <p><strong>Grade:</strong> {getAssessmentGradeDisplay(assessment, scale ? [scale] : [], selectedStudent.id)}</p>
+                  <p><strong>Feedback:</strong> {selectedGrade.feedback || "No feedback yet."}</p>
+                  <p><strong>Graded by:</strong> {selectedGrade.gradedBy || "Not recorded"}</p>
+                  <p><strong>Graded:</strong> {selectedGrade.gradedAt ? formatDateTime(selectedGrade.gradedAt) : "Not recorded"}</p>
+                </div>
+              ) : isStudentSubmitMode ? (
                 assessment.requiresTurnIn ? (
                   <button
                     className="primary-action"
@@ -4113,7 +4430,7 @@ function AssessmentResourceDetail({
                 label="Feedback"
                 value={selectedGrade.feedback ?? ""}
                 onChange={(feedback) => onGradeChange(selectedStudent.id, { feedback })}
-              /> : selectedGrade.feedback ? <p className="assessment-description">{selectedGrade.feedback}</p> : null}
+              /> : selectedGrade.feedback && !selectedGradeIsGraded ? <p className="assessment-description">{selectedGrade.feedback}</p> : null}
             </section>
           </section>
         ) : (
@@ -4162,6 +4479,7 @@ function SubjectClassWorkPage({
   assessmentScales,
   accessLevel = "admin",
   activeStudentId,
+  graderLabel,
   onBack,
   onChange,
 }: {
@@ -4171,6 +4489,7 @@ function SubjectClassWorkPage({
   assessmentScales: AssessmentScale[];
   accessLevel?: SchoolWorkAccessLevel;
   activeStudentId?: string;
+  graderLabel?: string;
   onBack: () => void;
   onChange: (subjectClass: SubjectClass) => void;
 }) {
@@ -4196,7 +4515,7 @@ function SubjectClassWorkPage({
   const [hasUnsavedResourceChanges, setHasUnsavedResourceChanges] = useState(false);
 
   useEffect(() => {
-    if (accessLevel === "student" && activeWorkTab !== "resources") {
+    if (accessLevel === "student" && activeWorkTab !== "resources" && activeWorkTab !== "status") {
       setActiveWorkTab("resources");
     }
   }, [accessLevel, activeWorkTab]);
@@ -4262,6 +4581,17 @@ function SubjectClassWorkPage({
       : activeFolder
         ? activeFolder.id
         : "root";
+  const oneLevelUpTargetId = selectedResource
+    ? (selectedResource.folderId ?? "root")
+    : selectedAssessment
+      ? (selectedAssessment.folderId ?? "root")
+      : activeFolder
+        ? (activeFolder.parentId ?? "root")
+        : null;
+  const oneLevelUpTargetFolder = oneLevelUpTargetId && oneLevelUpTargetId !== "root"
+    ? folders.find((folder) => folder.id === oneLevelUpTargetId)
+    : null;
+  const oneLevelUpLabel = oneLevelUpTargetId === "root" ? subjectClass.name : oneLevelUpTargetFolder?.name;
   const childFolders = folders.filter((folder) => (folder.parentId ?? "root") === selectedTreeFolderId);
   const folderResources = resources.filter((resource) => (resource.folderId ?? "root") === selectedTreeFolderId);
   const folderAssessments = assessments.filter((assessment) => (assessment.folderId ?? "root") === selectedTreeFolderId);
@@ -4276,6 +4606,7 @@ function SubjectClassWorkPage({
     setAssessmentModalIndex(undefined);
   };
   const updateAssessmentGrade = (assessmentId: string, studentId: string, patch: Partial<AssessmentGrade>) => {
+    const isGradingPatch = canGradeSchoolWork && ("levelId" in patch || "feedback" in patch);
     updateAssessments(assessments.map((assessment) => {
       if (assessment.id !== assessmentId) {
         return assessment;
@@ -4284,7 +4615,7 @@ function SubjectClassWorkPage({
       const nextGrade = {
         ...existingGrade,
         ...patch,
-        gradedAt: new Date().toISOString(),
+        ...(isGradingPatch ? { gradedAt: new Date().toISOString(), gradedBy: graderLabel ?? "Admin" } : {}),
       };
       return {
         ...assessment,
@@ -4647,7 +4978,10 @@ function SubjectClassWorkPage({
   return (
     <div className="school-work-page">
       <div className="editor-back-row">
-        <button className="secondary-action" type="button" onClick={onBack}>Back to subject classes</button>
+        <button className="school-work-back-link" type="button" onClick={onBack}>
+          <ArrowLeft size={16} />
+          Back to subject classes
+        </button>
       </div>
       <nav
         className="subject-work-nav"
@@ -4663,7 +4997,7 @@ function SubjectClassWorkPage({
         <span className="subject-work-nav-tabs">
           {accessLevel !== "student" ? <button className={activeWorkTab === "overview" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("overview")}>Overview</button> : null}
           <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("resources")}>Resources</button>
-          {accessLevel !== "student" ? <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("status")}>Status and follow-up</button> : null}
+          <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("status")}>Status and follow-up</button>
           {accessLevel !== "student" ? <button className={activeWorkTab === "students" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("students")}>Students</button> : null}
         </span>
         <span className="subject-work-nav-spacer" aria-hidden="true" />
@@ -4710,19 +5044,23 @@ function SubjectClassWorkPage({
       ) : null}
       {activeWorkTab === "status" ? (
         <section className="status-followup-page">
-          <nav className="status-followup-menu" aria-label="Status and follow-up sections">
-            <button
-              className={activeStatusView === "assessmentRecord" && !selectedGradeAssessmentId ? "active-status-followup-menu-item" : ""}
-              type="button"
-              onClick={() => {
-                setActiveStatusView("assessmentRecord");
-                setSelectedGradeAssessmentId(null);
-              }}
-            >
-              Assessment record
-            </button>
-          </nav>
-          {selectedGradeAssessmentId ? (() => {
+          {accessLevel === "student" ? (
+            <StudentGradebookView assessments={assessments} scales={assessmentScales} studentId={activeStudentId} />
+          ) : (
+            <>
+              <nav className="status-followup-menu" aria-label="Status and follow-up sections">
+                <button
+                  className={activeStatusView === "assessmentRecord" && !selectedGradeAssessmentId ? "active-status-followup-menu-item" : ""}
+                  type="button"
+                  onClick={() => {
+                    setActiveStatusView("assessmentRecord");
+                    setSelectedGradeAssessmentId(null);
+                  }}
+                >
+                  Assessment record
+                </button>
+              </nav>
+              {selectedGradeAssessmentId ? (() => {
             const selectedAssessment = assessments.find((assessment) => assessment.id === selectedGradeAssessmentId);
             if (!selectedAssessment) {
               return (
@@ -4756,13 +5094,15 @@ function SubjectClassWorkPage({
                 />
               </div>
             );
-          })() : (
-            <GradebookView
-              assessments={assessments}
-              scales={assessmentScales}
-              students={subjectClassStudents}
-              onOpenAssessment={setSelectedGradeAssessmentId}
-            />
+              })() : (
+                <GradebookView
+                  assessments={assessments}
+                  scales={assessmentScales}
+                  students={subjectClassStudents}
+                  onOpenAssessment={setSelectedGradeAssessmentId}
+                />
+              )}
+            </>
           )}
         </section>
       ) : null}
@@ -4989,12 +5329,23 @@ function SubjectClassWorkPage({
               />
             ) : (
               <>
-                {canCreateSchoolWork ? <div className="resource-save-row">
-                  <button className="secondary-action" type="button" onClick={saveResourceChanges} disabled={!hasUnsavedResourceChanges}>
-                    <Save size={16} />
-                    Save resource changes
-                  </button>
-                </div> : null}
+                {oneLevelUpTargetId || canCreateSchoolWork ? (
+                  <div className={`resource-save-row ${oneLevelUpTargetId ? "has-one-level-up" : ""}`}>
+                    {oneLevelUpTargetId ? (
+                      <button className="resource-one-level-up" type="button" onClick={() => selectTreeFolder(oneLevelUpTargetId)}>
+                        <ArrowLeft size={16} />
+                        <span>One level up</span>
+                        {oneLevelUpLabel ? <small>{oneLevelUpLabel}</small> : null}
+                      </button>
+                    ) : <span />}
+                    {canCreateSchoolWork ? (
+                      <button className="secondary-action" type="button" onClick={saveResourceChanges} disabled={!hasUnsavedResourceChanges}>
+                        <Save size={16} />
+                        Save resource changes
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {canCreateSchoolWork && (showFolderResourcePicker || (childFolders.length === 0 && folderResources.length === 0 && folderAssessments.length === 0)) ? (
                   resourceTypePicker
                 ) : (
@@ -5157,6 +5508,31 @@ function getEffectiveAssessmentScales(school: School, globalSchoolWork: GlobalSc
     ...globalSchoolWork.assessmentScales.filter((scale) => settings.enabledGlobalAssessmentScaleIds.includes(scale.id)),
     ...settings.customAssessmentScales,
   ];
+}
+
+function formatAssessmentScaleSummary(scale: AssessmentScale) {
+  if (scale.levels.length > 12) {
+    const numericValues = scale.levels.map((level) => Number(level.value)).filter(Number.isFinite);
+    if (numericValues.length >= 10) {
+      return `${Math.min(...numericValues)}-${Math.max(...numericValues)} (${scale.levels.length} levels)`;
+    }
+    return `${scale.levels.length} levels`;
+  }
+
+  return scale.levels.map((level) => level.value).join(", ");
+}
+
+function formatGradeLevel(gradeLevel?: SchoolGradeLevel) {
+  if (!gradeLevel) {
+    return "";
+  }
+  const grade = gradeLevel.grade || "Grade";
+  return `${grade}${gradeLevel.year ? ` (${gradeLevel.year})` : ""}`;
+}
+
+function slugifyGradeLevel(grade: string, year: string) {
+  const slug = slugifySchoolName(`${grade}-${year}`);
+  return slug ? `grade-${slug}` : `grade-${Date.now()}`;
 }
 
 function isVisibleOnHomePage(member: StaffMember) {
@@ -5341,7 +5717,8 @@ function SchoolFooter({ school }: { school: School }) {
   return (
     <footer className="school-footer">
       <div>
-        <h2>{school.name} - part of EduLink Africa</h2>
+        <h2>{school.name}</h2>
+        <p className="school-footer-powered">Powered by EduLink Africa</p>
         <p>{school.address}, {school.city}, {school.country}</p>
       </div>
       <div>
@@ -5894,6 +6271,16 @@ function LoadingContent() {
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
+}
+
+function formatDateTime(date: string) {
+  return new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(date));
 }
 
 function formatLastActive(date?: string) {

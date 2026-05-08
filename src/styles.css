@@ -105,7 +105,7 @@ a {
 }
 
 .eyebrow {
-  margin: 0 0 14px;
+  margin: 0 0 20px;
   color: var(--school-sub);
   font-size: 0.78rem;
   font-weight: 800;
@@ -566,6 +566,7 @@ textarea {
   gap: 10px;
   min-height: 0;
   overflow: auto;
+  padding: 10px 0 0 12px;
 }
 
 .student-subject-class-option {
@@ -814,14 +815,53 @@ textarea {
   align-items: center;
   justify-content: flex-end;
   gap: 14px;
+  margin-left: auto;
   color: #33403b;
   font-weight: 800;
 }
 
-.school-header-session .secondary-action {
-  border-color: #cad5d0;
+.school-account-menu {
+  position: relative;
+}
+
+.school-account-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #cad5d0;
+  border-radius: 6px;
+  padding: 10px 12px;
   color: #1f3d36;
   background: #fff;
+  font-weight: 800;
+}
+
+.school-account-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  display: grid;
+  min-width: 160px;
+  border: 1px solid #cad5d0;
+  border-radius: 6px;
+  padding: 6px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 31, 29, 0.14);
+}
+
+.school-account-dropdown button {
+  border: 0;
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: #1f3d36;
+  text-align: left;
+  background: transparent;
+  font-weight: 800;
+}
+
+.school-account-dropdown button:hover {
+  background: #eef4f0;
 }
 
 .school-hero {
@@ -1093,8 +1133,12 @@ textarea {
 }
 
 .school-footer h2 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 1.2rem;
+}
+
+.school-footer-powered {
+  font-size: 0.82rem;
 }
 
 .school-footer p {
@@ -1378,7 +1422,7 @@ textarea {
   gap: 14px;
   max-height: calc(100vh - 77px);
   min-height: calc(100vh - 78px);
-  overflow: hidden;
+  overflow-y: auto;
   padding: 24px;
   color: #fff;
   background: #18322e;
@@ -1514,12 +1558,18 @@ textarea {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
   min-height: calc(100vh - 78px);
+  align-items: start;
 }
 
 .superadmin-sidebar {
+  position: sticky;
+  top: 77px;
   display: grid;
   align-content: start;
   gap: 18px;
+  max-height: calc(100vh - 77px);
+  min-height: calc(100vh - 78px);
+  overflow-y: auto;
   padding: 24px;
   color: #fff;
   background: #18322e;
@@ -1567,8 +1617,8 @@ textarea {
   color: rgba(255, 255, 255, 0.88);
 }
 
-.search-field input,
-.create-school-box input {
+.superadmin-sidebar .search-field input,
+.superadmin-sidebar .create-school-box input {
   border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
@@ -1581,8 +1631,13 @@ textarea {
   border-top: 1px solid rgba(255, 255, 255, 0.16);
 }
 
-.create-school-box .field-label {
+.superadmin-sidebar .create-school-box .field-label {
   color: rgba(255, 255, 255, 0.88);
+}
+
+.superadmin-add-box .primary-action {
+  justify-self: start;
+  width: auto;
 }
 
 .superadmin-main {
@@ -1762,6 +1817,24 @@ textarea {
   background: #fff;
 }
 
+.school-work-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  margin-left: 12px;
+  border: 0;
+  padding: 0;
+  color: #1f6857;
+  background: transparent;
+  font-weight: 800;
+}
+
+.school-work-back-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .editor-section-picker {
   display: grid;
   gap: 20px;
@@ -1876,7 +1949,7 @@ textarea {
 
 .classes-editor-layout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -2089,6 +2162,7 @@ textarea {
 
 .subject-work-nav-icon {
   display: inline-flex;
+  flex: 0 0 36px;
   align-items: center;
   justify-content: center;
   width: 36px;
@@ -2317,6 +2391,44 @@ textarea {
   grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px);
 }
 
+.assessment-level-table-wrap {
+  overflow-x: auto;
+}
+
+.assessment-level-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+}
+
+.assessment-level-table th,
+.assessment-level-table td {
+  border-bottom: 1px solid #e3e9e5;
+  padding: 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.assessment-level-table th {
+  color: #5d6862;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.assessment-level-table th:nth-child(2),
+.assessment-level-table td:nth-child(2) {
+  width: 130px;
+}
+
+.assessment-level-table th:last-child,
+.assessment-level-table td:last-child {
+  width: 110px;
+}
+
+.assessment-level-table input {
+  padding: 9px 10px;
+}
+
 .scale-actions,
 .assessment-card-heading {
   display: flex;
@@ -2418,35 +2530,9 @@ textarea {
 }
 
 .assessment-status-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  border-radius: 999px;
-  padding: 4px 10px;
-  color: #33403b;
-  background: #eef2f0;
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.assessment-status-not-submitted {
-  color: #7a2e2e;
-  background: #f8e8e6;
-}
-
-.assessment-status-submitted {
-  color: #6a4b13;
-  background: #fbf1d7;
-}
-
-.assessment-status-not-graded {
-  color: #4f5b56;
-  background: #edf1ef;
-}
-
-.assessment-status-graded {
-  color: #1f5b46;
-  background: #dff2e8;
+  color: inherit;
+  background: transparent;
+  font-weight: 500;
 }
 
 .assessment-student-detail-page {
@@ -2481,6 +2567,19 @@ textarea {
 
 .assessment-student-grading-panel h3 {
   margin: 0;
+}
+
+.student-graded-assessment-summary {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e3e7e4;
+  padding-top: 12px;
+}
+
+.student-graded-assessment-summary p {
+  margin: 0;
+  color: #33403b;
+  line-height: 1.5;
 }
 
 .status-followup-page,
@@ -2604,9 +2703,9 @@ textarea {
   position: sticky;
   left: 0;
   z-index: 1;
-  width: 100px;
-  min-width: 100px;
-  max-width: 100px;
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
   background: #fff;
 }
 
@@ -2624,13 +2723,17 @@ textarea {
   background: #f7f8f7;
 }
 
+.gradebook-table th:not(:first-child),
 .gradebook-table td:not(:first-child) {
   width: 50px;
   min-width: 50px;
   max-width: 50px;
+  text-align: center;
+}
+
+.gradebook-table td:not(:first-child) {
   color: #5b6862;
   font-weight: 500;
-  text-align: center;
 }
 
 .gradebook-assessment-button {
@@ -2654,6 +2757,66 @@ textarea {
   font-weight: 700;
 }
 
+.student-gradebook-page {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.student-assessment-grade-card {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+}
+
+.student-assessment-grade-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 160px) minmax(150px, auto);
+  gap: 16px;
+  align-items: center;
+}
+
+.student-assessment-grade-heading h3,
+.student-assessment-feedback p {
+  margin: 0;
+}
+
+.student-assessment-grade-heading h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.student-assessment-grade-heading strong {
+  justify-self: stretch;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: #1f5b46;
+  text-align: center;
+  background: #dff2e8;
+}
+
+.student-assessment-grade-heading time {
+  justify-self: end;
+  color: #5d6862;
+  font-weight: 800;
+}
+
+.student-assessment-feedback {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #e3e7e4;
+  padding-top: 12px;
+}
+
+.student-assessment-feedback p {
+  color: #33403b;
+  line-height: 1.55;
+}
+
 .school-work-detail-shell {
   grid-column: 1 / -1;
   display: grid;
@@ -2662,7 +2825,7 @@ textarea {
 
 .resource-workspace {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   min-height: 560px;
   border: 1px solid #d8e0dc;
   border-radius: 8px;
@@ -2847,6 +3010,27 @@ textarea {
   background: #f8faf8;
 }
 
+.resource-one-level-up {
+  display: inline-flex;
+  justify-self: start;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  color: #1f6857;
+  background: transparent;
+  font-weight: 800;
+}
+
+.resource-one-level-up small {
+  color: #66736d;
+  font-weight: 700;
+}
+
+.resource-one-level-up:hover span {
+  text-decoration: underline;
+}
+
 .resource-main-heading {
   display: flex;
   align-items: flex-start;
@@ -2947,7 +3131,13 @@ textarea {
 
 .resource-save-row {
   display: flex;
+  align-items: center;
+  gap: 16px;
   justify-content: flex-end;
+}
+
+.resource-save-row.has-one-level-up {
+  justify-content: space-between;
 }
 
 .resource-save-row .secondary-action {
@@ -3186,8 +3376,11 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .admin-left-rail {
+  .admin-left-rail,
+  .superadmin-sidebar {
     position: static;
+    max-height: none;
+    min-height: 0;
   }
 
   .resource-workspace {
