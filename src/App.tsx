@@ -6,6 +6,8 @@ import {
   CalendarDays,
   ChevronRight,
   ClipboardCheck,
+  CheckSquare,
+  Clock,
   FileText,
   Folder,
   Globe2,
@@ -21,6 +23,7 @@ import {
   LogIn,
   Mail,
   MapPin,
+  MessageCircle,
   Phone,
   Plus,
   Quote,
@@ -52,7 +55,7 @@ import {
 } from "./lib/schools";
 import { hasFirebaseConfig } from "./lib/firebase";
 import { auth } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolGradeLevel, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
 
 type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings" | "loginSettings";
 type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork" | "settings";
@@ -274,8 +277,39 @@ function LandingPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [registrationStatus, setRegistrationStatus] = useState("");
+  const [lmsDemoChooserOpen, setLmsDemoChooserOpen] = useState(false);
 
   const slug = useMemo(() => slugifySchoolName(schoolName) || "demo", [schoolName]);
+  const demoStudent = sampleSchool.students[0];
+  const websiteFeatures = [
+    { icon: Globe2, title: "School website", text: "Publish a clean public site with profile text, hero images, values, leadership, and contact details." },
+    { icon: FileText, title: "News and pages", text: "Share announcements, school pages, staff information, and guardian-facing updates from one editor." },
+    { icon: CalendarDays, title: "Calendar", text: "Keep families aligned with term dates, events, meetings, exams, and school activities." },
+  ];
+  const lmsFeatures = [
+    { icon: Folder, title: "Subject class spaces", text: "Create subject classes with teachers, students, folders, files, links, and learning resources." },
+    { icon: ClipboardCheck, title: "Assignments and assessment", text: "Set tasks, collect submissions, record marks, and use global or school-specific assessment scales." },
+    { icon: UserRound, title: "Teacher and student access", text: "Route admins, teachers, and students into the right workspace with role-aware SchoolWork views." },
+  ];
+  const platformPillars = [
+    "Website content management",
+    "SchoolWork LMS",
+    "Staff, learners, and guardians",
+    "Assessments and resources",
+    "Admin dashboards",
+    "Login controls",
+  ];
+
+  const openLmsDemoView = (view: "admin" | "student") => {
+    setLmsDemoChooserOpen(false);
+    if (view === "admin") {
+      openInNewTab(`/${sampleSchool.id}/schoolwork?simulateRole=admin`);
+      return;
+    }
+
+    const params = new URLSearchParams({ simulateRole: "student", simulateId: demoStudent?.id ?? "student-001" });
+    openInNewTab(`/${sampleSchool.id}/schoolwork?${params.toString()}`);
+  };
 
   const registerSchool = async () => {
     const normalizedEmail = adminEmail.trim().toLowerCase();
@@ -350,13 +384,47 @@ function LandingPage() {
 
         <div className="platform-hero-grid">
           <div className="platform-copy">
-          
-            <p className="eyebrow">School websites for African communities</p>
-            <h1>Register a school page and manage the content in one place.</h1>
+            <p className="eyebrow">School websites and LMS for African communities</p>
+            <h1>One place for your school website and daily learning.</h1>
             <p>
-              Each school receives a clean public website with news, calendar, contact details, leadership,
-              images, and profile text that administrators can update from a focused dashboard.
+              EduLink gives each school a public website families can trust and a fully working LMS for
+              teachers, students, resources, assignments, assessment, and school administration.
             </p>
+            <div className="hero-actions">
+              <button className="primary-action" type="button" onClick={() => navigate("/demo")}>
+                <Globe2 size={18} />
+                View school website
+              </button>
+              <div className="demo-choice">
+                <button className="secondary-action" type="button" onClick={() => setLmsDemoChooserOpen((open) => !open)} aria-expanded={lmsDemoChooserOpen}>
+                  <ClipboardCheck size={18} />
+                  Open LMS demo
+                </button>
+                {lmsDemoChooserOpen ? (
+                  <div className="demo-choice-menu" role="dialog" aria-label="Choose LMS demo view">
+                    <button type="button" onClick={() => openLmsDemoView("admin")}>
+                      <LayoutDashboard size={18} />
+                      <span>
+                        <strong>Admin view</strong>
+                        <small>Open all subject classes and management tools.</small>
+                      </span>
+                    </button>
+                    <button type="button" onClick={() => openLmsDemoView("student")}>
+                      <UserRound size={18} />
+                      <span>
+                        <strong>Student view</strong>
+                        <small>Open the learner workspace for {demoStudent ? `${demoStudent.firstName} ${demoStudent.lastName}` : "the demo student"}.</small>
+                      </span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="platform-pillars" aria-label="EduLink platform features">
+              {platformPillars.map((pillar) => (
+                <span key={pillar}>{pillar}</span>
+              ))}
+            </div>
           </div>
 
           <form
@@ -370,7 +438,7 @@ function LandingPage() {
               <SchoolIcon />
               <div>
                 <h2>Register school</h2>
-                <p>Create a managed page using the standard EduLink template.</p>
+                <p>Create the school site and admin dashboard, then enable SchoolWork for classes.</p>
               </div>
             </div>
             <label>
@@ -402,7 +470,7 @@ function LandingPage() {
             {registrationStatus ? <p className="form-status">{registrationStatus}</p> : null}
             <button className="primary-action" type="submit">
               <LayoutDashboard size={18} />
-              Create page
+              Create school platform
             </button>
           </form>
         </div>
@@ -410,15 +478,79 @@ function LandingPage() {
 
       <section className="template-preview">
         <div>
-            <img src="/edulink-logo.png" alt="EduLink Africa logo" style={{ height: 90, width: 90, marginBottom: 24, borderRadius: 16, background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.07)' }} />
-          <p className="eyebrow">Standard school template</p>
-          <h2>Inspired by practical municipal school websites.</h2>
+          <img src="/edulink-logo.png" alt="EduLink Africa logo" style={{ height: 90, width: 90, marginBottom: 24, borderRadius: 16, background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.07)' }} />
+          <p className="eyebrow">Website plus learning platform</p>
+          <h2>A public front door connected to the work happening inside school.</h2>
           <p>
-            The design prioritizes quick contact information, prominent news, calendar dates, profile text,
-            and a dependable footer so families find what they need fast.
+            The homepage supports everyday school communication, while SchoolWork gives teachers and learners
+            the structure they need for lessons, resources, tasks, submissions, and assessment.
           </p>
         </div>
         <SchoolMiniPreview />
+      </section>
+
+      <section className="feature-band">
+        <div className="marketing-section-heading">
+          <p className="eyebrow">Public school website</p>
+          <h2>Everything families need to find quickly.</h2>
+          <p>Give every school a professional website that is simple for administrators to maintain.</p>
+        </div>
+        <div className="feature-grid">
+          {websiteFeatures.map((feature) => {
+            const Icon = feature.icon;
+            return (
+              <article className="feature-card" key={feature.title}>
+                <Icon size={24} />
+                <h3>{feature.title}</h3>
+                <p>{feature.text}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="feature-band lms-band">
+        <div className="marketing-section-heading">
+          <p className="eyebrow">Fully working LMS</p>
+          <h2>SchoolWork supports actual teaching, not just a brochure page.</h2>
+          <p>Teachers can organize learning materials, manage subject classes, assess work, and give learners a focused place to study.</p>
+        </div>
+        <div className="feature-grid">
+          {lmsFeatures.map((feature) => {
+            const Icon = feature.icon;
+            return (
+              <article className="feature-card" key={feature.title}>
+                <Icon size={24} />
+                <h3>{feature.title}</h3>
+                <p>{feature.text}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="workflow-section">
+        <div className="marketing-section-heading">
+          <p className="eyebrow">Designed for school operations</p>
+          <h2>Admins set the structure. Teachers run classes. Students see their work.</h2>
+        </div>
+        <div className="workflow-grid">
+          <div>
+            <ShieldCheck size={28} />
+            <h3>Admin control</h3>
+            <p>Configure school profile, users, grade levels, classes, subjects, pages, login methods, and assessment scales.</p>
+          </div>
+          <div>
+            <Mail size={28} />
+            <h3>Clear communication</h3>
+            <p>Keep school news, calendar dates, contact details, staff visibility, and guardian information in one place.</p>
+          </div>
+          <div>
+            <GraduationCap size={28} />
+            <h3>Learning continuity</h3>
+            <p>Students can access their subject classes, resources, assignments, grades, and feedback through the LMS portal.</p>
+          </div>
+        </div>
       </section>
     </main>
   );
@@ -900,6 +1032,7 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const [activeSubjectClassId, setActiveSubjectClassId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("subjectClassId"));
 
@@ -952,11 +1085,28 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
   const effectiveScales = getEffectiveAssessmentScales(school, globalSchoolWork);
   const selectedSubjectClass = identity?.subjectClasses.find((subjectClass) => subjectClass.id === activeSubjectClassId) ?? null;
   const isSimulating = new URLSearchParams(window.location.search).has("simulateRole");
+  const isStudentDemo = isSimulating && identity?.role === "student";
 
   const saveNextSubjectClass = async (nextSubjectClass: SubjectClass) => {
     const nextSchool = {
       ...school,
       subjectClasses: (school.subjectClasses ?? []).map((subjectClass) => subjectClass.id === nextSubjectClass.id ? nextSubjectClass : subjectClass),
+    };
+    setSchool(nextSchool);
+    await saveSchool(nextSchool);
+  };
+  const saveNextSchoolWorkSettings = async (nextSettings: SchoolWorkSettings) => {
+    const nextSchool = {
+      ...school,
+      schoolWorkSettings: nextSettings,
+    };
+    setSchool(nextSchool);
+    await saveSchool(nextSchool);
+  };
+  const saveNextChatMessages = async (nextMessages: SchoolChatMessage[]) => {
+    const nextSchool = {
+      ...school,
+      chatMessages: nextMessages,
     };
     setSchool(nextSchool);
     await saveSchool(nextSchool);
@@ -975,44 +1125,60 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
     setActiveSubjectClassId(null);
     window.history.replaceState({}, "", `/${school.id}/schoolwork${window.location.search.replace(/([?&])subjectClassId=[^&]*/g, "$1").replace(/[?&]$/, "").replace("?&", "?")}`);
   };
+  const roleLabel = identity?.role ? identity.role.charAt(0).toUpperCase() + identity.role.slice(1) : "";
 
   return (
     <main className="school-page">
-      <SchoolHeader
-        school={school}
-        currentPage="students"
-        hideNav={Boolean(identity)}
-        actions={identity ? (
-          <div className="school-header-session">
-            <div className="school-account-menu" ref={accountMenuRef}>
-              <button
-                className="school-account-button"
-                type="button"
-                onClick={() => setAccountMenuOpen((open) => !open)}
-                aria-expanded={accountMenuOpen}
-                aria-haspopup="menu"
-              >
-                <FontAwesomeIcon icon={faUser} />
-                <span>{identity.label}</span>
+      {isStudentDemo ? null : (
+        <SchoolHeader
+          school={school}
+          currentPage="students"
+          hideNav={Boolean(identity)}
+          actions={identity ? (
+            <div className="school-header-session">
+              <button className="school-account-button chat-icon-button" type="button" onClick={() => setChatOpen(true)} aria-label="Open messages">
+                <MessageCircle size={19} />
               </button>
-              {accountMenuOpen ? (
-                <div className="school-account-dropdown" role="menu">
-                  {isSimulating ? <button type="button" role="menuitem" onClick={exitSimulation}>Exit simulation</button> : null}
-                  {hasFirebaseConfig && user ? <button type="button" role="menuitem" onClick={() => void logout()}>Sign out</button> : null}
-                </div>
-              ) : null}
+              <div className="school-account-menu" ref={accountMenuRef}>
+                <button
+                  className="school-account-button"
+                  type="button"
+                  onClick={() => setAccountMenuOpen((open) => !open)}
+                  aria-expanded={accountMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <FontAwesomeIcon icon={faUser} />
+                  <span>{identity.label}</span>
+                </button>
+                {accountMenuOpen ? (
+                  <div className="school-account-dropdown" role="menu">
+                    {isSimulating ? <button type="button" role="menuitem" onClick={exitSimulation}>Exit simulation</button> : null}
+                    {hasFirebaseConfig && user ? <button type="button" role="menuitem" onClick={() => void logout()}>Sign out</button> : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ) : undefined}
-      />
+          ) : undefined}
+        />
+      )}
+      {identity && chatOpen ? (
+        <SchoolChatPopup
+          school={school}
+          identity={identity}
+          messages={school.chatMessages ?? []}
+          onClose={() => setChatOpen(false)}
+          onMessagesChange={(messages) => void saveNextChatMessages(messages)}
+        />
+      ) : null}
       <section className="school-work-portal">
         {!identity || identity.role !== "student" ? <div className="portal-heading">
           <div>
-            <p className="eyebrow">SchoolWork</p>
             <h1>{school.name}</h1>
-            <p>{identity ? `${identity.label} · ${identity.role}` : "Sign in with a staff or student account to view SchoolWork."}</p>
+            <p>{identity ? `${identity.label} · ${roleLabel}` : "Sign in with a staff or student account to view SchoolWork."}</p>
           </div>
-          {hasFirebaseConfig ? (
+          {isSimulating ? (
+            <button className="secondary-action" type="button" onClick={exitSimulation}>Sign out</button>
+          ) : hasFirebaseConfig ? (
             user ? <button className="secondary-action" type="button" onClick={() => void logout()}>Sign out</button> : (
               <button className="primary-action" type="button" onClick={() => navigate("/login")}>Login</button>
             )
@@ -1029,11 +1195,14 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
             subjects={school.subjects}
             students={school.students}
             assessmentScales={effectiveScales}
+            globalAssessmentScales={globalSchoolWork.assessmentScales}
+            schoolWorkSettings={school.schoolWorkSettings}
             accessLevel={identity.role === "student" ? "student" : identity.role === "teacher" ? "teacher" : identity.role === "viewer" ? "viewer" : "admin"}
             activeStudentId={identity.role === "student" ? identity.studentId : undefined}
             graderLabel={identity.label}
             onBack={backToSubjectClasses}
             onChange={saveNextSubjectClass}
+            onSchoolWorkSettingsChange={saveNextSchoolWorkSettings}
           />
         ) : (
           <SchoolWorkOverview
@@ -1045,7 +1214,6 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
           />
         )}
       </section>
-      {identity?.role === "student" || identity?.role === "teacher" ? null : <SchoolFooter school={school} />}
     </main>
   );
 }
@@ -1254,6 +1422,7 @@ function AdminPage({ schoolId }: { schoolId: string }) {
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
   const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     void Promise.all([getSchool(schoolId), getGlobalAboutConfig(), getGlobalSchoolWorkConfig()]).then(([remoteSchool, nextGlobalAbout, nextGlobalSchoolWork]) => {
@@ -1311,6 +1480,9 @@ function AdminPage({ schoolId }: { schoolId: string }) {
     setSaveStatus("Saved!");
     setTimeout(() => setSaveStatus(null), 2000);
   };
+  const saveNextChatMessages = async (nextMessages: SchoolChatMessage[]) => {
+    await saveNextSchool({ ...school, chatMessages: nextMessages });
+  };
 
   const logout = async () => {
     if (!auth) {
@@ -1348,6 +1520,9 @@ function AdminPage({ schoolId }: { schoolId: string }) {
           <span>EduLink Africa</span>
         </button>
         <div className="admin-actions">
+          <button className="secondary-action admin-chat-button" onClick={() => setChatOpen(true)} aria-label="Open messages">
+            <MessageCircle size={18} />
+          </button>
           <button className="secondary-action" onClick={() => openInNewTab(`/${school.id}`)}>
             View page
           </button>
@@ -1364,6 +1539,15 @@ function AdminPage({ schoolId }: { schoolId: string }) {
           {saveStatus ? <span className="admin-save-status">{saveStatus}</span> : null}
         </div>
       </header>
+      {chatOpen ? (
+        <SchoolChatPopup
+          school={school}
+          identity={{ role: "admin", label: "School admin", subjectClasses: school.subjectClasses ?? [] }}
+          messages={school.chatMessages ?? []}
+          onClose={() => setChatOpen(false)}
+          onMessagesChange={(messages) => void saveNextChatMessages(messages)}
+        />
+      ) : null}
 
       <section className="admin-layout">
         <aside className="admin-left-rail">
@@ -2091,6 +2275,8 @@ function SchoolEditor({
   const subjectClasses = school.subjectClasses ?? [];
   const schoolWorkSettings = school.schoolWorkSettings ?? {
     enabledGlobalAssessmentScaleIds: globalSchoolWork?.assessmentScales.map((scale) => scale.id) ?? [],
+    knownGlobalAssessmentScaleIds: globalSchoolWork?.assessmentScales.map((scale) => scale.id) ?? [],
+    allowStudentMessaging: false,
     customAssessmentScales: [],
   };
   const loginSettings = school.loginSettings ?? {
@@ -2263,7 +2449,7 @@ function SchoolEditor({
         onChange={(value) => update({ ...item, title: value, slug: item.slug || slugifySchoolName(value) })}
       />
       <TextInput label="URL slug" value={item.slug ?? ""} onChange={(value) => update({ ...item, slug: slugifySchoolName(value) })} />
-      <TextInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
+      <DateInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
       <ImageUpload label="Header image" value={item.headerImage ?? ""} onChange={(headerImage) => update({ ...item, headerImage })} />
       <RichTextEditor label="Body" value={item.body} onChange={(value) => update({ ...item, body: value })} />
     </>
@@ -2271,7 +2457,7 @@ function SchoolEditor({
   const renderCalendarFields = (item: CalendarItem, update: (item: CalendarItem) => void) => (
     <>
       <TextInput label="Title" value={item.title} onChange={(value) => update({ ...item, title: value })} />
-      <TextInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
+      <DateInput label="Date" value={item.date} onChange={(value) => update({ ...item, date: value })} />
     </>
   );
   const renderSubjectFields = (item: Subject, update: (item: Subject) => void) => (
@@ -2444,7 +2630,7 @@ function SchoolEditor({
           onChange={setDraftStudentGradeMode}
         />
         <div className="split-fields">
-          <TextInput label="Date of birth" value={item.dateOfBirth ?? ""} onChange={(value) => update({ ...item, dateOfBirth: value })} />
+          <DateInput label="Date of birth" value={item.dateOfBirth ?? ""} onChange={(value) => update({ ...item, dateOfBirth: value })} />
           <SelectInput
             label="Gender"
             value={item.gender ?? ""}
@@ -2657,6 +2843,21 @@ function SchoolEditor({
                     />
                   </label>
                 </div>
+              </section>
+              <section className="sub-editor-panel">
+                <h3>Messages</h3>
+                <p className="editor-helper-text">Control who students can contact in school chat.</p>
+                <label className="login-format-option">
+                  <div>
+                    <strong>Student-to-student messages</strong>
+                    <small>When disabled, students can message teachers and admins, but not other students.</small>
+                  </div>
+                  <CheckboxInput
+                    label="Enabled"
+                    checked={Boolean(schoolWorkSettings.allowStudentMessaging)}
+                    onChange={(allowStudentMessaging) => updateSchoolWorkSettings({ ...schoolWorkSettings, allowStudentMessaging })}
+                  />
+                </label>
               </section>
             </div>
           </EditorPanel>
@@ -3140,6 +3341,7 @@ function SchoolEditor({
                         checked={schoolWorkSettings.enabledGlobalAssessmentScaleIds.includes(scale.id)}
                         onChange={(checked) => updateSchoolWorkSettings({
                           ...schoolWorkSettings,
+                          knownGlobalAssessmentScaleIds: globalSchoolWork?.assessmentScales.map((item) => item.id) ?? schoolWorkSettings.knownGlobalAssessmentScaleIds,
                           enabledGlobalAssessmentScaleIds: checked
                             ? mergeUnique([...schoolWorkSettings.enabledGlobalAssessmentScaleIds, scale.id])
                             : schoolWorkSettings.enabledGlobalAssessmentScaleIds.filter((id) => id !== scale.id),
@@ -3199,10 +3401,13 @@ function SchoolEditor({
               subjects={subjects}
               students={students}
               assessmentScales={effectiveAssessmentScales}
+              globalAssessmentScales={globalSchoolWork?.assessmentScales ?? []}
+              schoolWorkSettings={schoolWorkSettings}
               accessLevel="admin"
               graderLabel="Admin"
               onBack={() => setActiveWorkSubjectClassId(null)}
               onChange={(nextSubjectClass) => setField("subjectClasses", subjectClasses.map((item) => item.id === nextSubjectClass.id ? nextSubjectClass : item))}
+              onSchoolWorkSettingsChange={updateSchoolWorkSettings}
             />
           </div>
         ) : null}
@@ -4061,7 +4266,6 @@ function SchoolWorkOverview({
       {subjectClasses.map((subjectClass) => {
         const subject = subjects.find((item) => item.id === subjectClass.subjectId);
         const mainClass = classes.find((item) => item.id === subjectClass.baseClassId);
-        const studentCount = students.filter((student) => subjectClass.studentIds.includes(student.id)).length;
         return (
           <button
             className="school-work-card"
@@ -4071,9 +4275,13 @@ function SchoolWorkOverview({
             style={{ "--subject-card-color": subject?.color ?? "#1f6857" } as React.CSSProperties}
           >
             <strong>{subject?.name ?? subjectClass.name}</strong>
-            <span>{subjectClass.teacherName || "No teacher assigned"}</span>
-            <span>{mainClass ? `${mainClass.name}${mainClass.grade ? ` · Grade ${mainClass.grade}` : ""}` : "Mixed classes"}</span>
-            <small>{studentCount} student{studentCount === 1 ? "" : "s"} · {subjectClass.assessments?.length ?? 0} assessments · {subjectClass.resources?.length ?? 0} resources</small>
+            <span className="subject-card-teacher">
+              <span className="subject-card-teacher-icon">
+                <FontAwesomeIcon icon={faUser} />
+              </span>
+              {subjectClass.teacherName || "No teacher assigned"}
+            </span>
+            <span>{mainClass?.grade ? `Grade ${mainClass.grade}` : mainClass?.name ?? "Mixed classes"}</span>
           </button>
         );
       })}
@@ -4101,6 +4309,56 @@ function createAssessment(assessmentScales: AssessmentScale[], folderId?: string
     ...(folderId ? { folderId } : {}),
     description: "",
     grades: [],
+  };
+}
+
+function createTestResource(folderId?: string): SubjectResource {
+  return {
+    id: `resource-test-${Date.now()}`,
+    type: "test",
+    title: "New test",
+    description: "",
+    dueDate: new Date().toISOString().slice(0, 10),
+    scaleId: "",
+    gradingMode: "auto",
+    publishResults: "after-review",
+    lobbyEnabled: false,
+    startsAt: "",
+    timerMode: "none",
+    timerMinutes: 45,
+    timerEndsAt: "",
+    autoSubmitOnTimerEnd: true,
+    questions: [createTestQuestion("multiple-choice")],
+    testSubmissions: [],
+    createdAt: new Date().toISOString(),
+    ...(folderId ? { folderId } : {}),
+  };
+}
+
+function createTestQuestion(type: "multiple-choice" | "text"): NonNullable<SubjectResource["questions"]>[number] {
+  return {
+    id: `question-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    prompt: type === "multiple-choice" ? "New multiple choice question" : "New text question",
+    marks: 1,
+    allowMultipleCorrect: false,
+    ...(type === "multiple-choice" ? {
+      options: [
+        { id: `option-${Date.now()}-1`, text: "Option 1", correct: true },
+        { id: `option-${Date.now()}-2`, text: "Option 2", correct: false },
+      ],
+    } : {}),
+  };
+}
+
+function createCustomAssessmentScale(): AssessmentScale {
+  return {
+    id: `custom-scale-${Date.now()}`,
+    name: "New assessment scale",
+    levels: [
+      { id: `level-${Date.now()}-1`, value: "Excellent", minPercentage: 80 },
+      { id: `level-${Date.now()}-2`, value: "Developing", minPercentage: 50 },
+    ],
   };
 }
 
@@ -4142,6 +4400,27 @@ function getStudentOverallGradeDisplay(assessments: Assessment[], scales: Assess
   return Number.isInteger(average) ? String(average) : average.toFixed(1);
 }
 
+function getTestAutoGrade(test: SubjectResource, submission: NonNullable<SubjectResource["testSubmissions"]>[number], scale?: AssessmentScale) {
+  const questions = test.questions ?? [];
+  const maxScore = questions.reduce((sum, question) => sum + (Number(question.marks) || 0), 0);
+  const score = questions.reduce((sum, question) => {
+    if (question.type !== "multiple-choice") {
+      return sum;
+    }
+    const correctOptionIds = (question.options ?? []).filter((option) => option.correct).map((option) => option.id).sort();
+    const answer = submission.answers[question.id];
+    const answerIds = (Array.isArray(answer) ? answer : answer ? [answer] : []).sort();
+    const isCorrect = correctOptionIds.length > 0 && correctOptionIds.length === answerIds.length && correctOptionIds.every((id, index) => id === answerIds[index]);
+    return sum + (isCorrect ? Number(question.marks) || 0 : 0);
+  }, 0);
+  const percentage = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+  const level = scale?.levels
+    .slice()
+    .sort((first, second) => second.minPercentage - first.minPercentage)
+    .find((item) => percentage >= item.minPercentage);
+  return { score, maxScore, percentage, level };
+}
+
 function getAssessmentStudentStatus(assessment: Assessment, grade?: AssessmentGrade) {
   if (grade?.levelId) {
     return "Graded";
@@ -4164,7 +4443,7 @@ function AssessmentFields({
   return (
     <>
       <TextInput label="Title" value={assessment.title} onChange={(title) => onChange({ ...assessment, title })} />
-      <TextInput label="Date" value={assessment.date} onChange={(date) => onChange({ ...assessment, date })} />
+      <DateInput label="Date" value={assessment.date} onChange={(date) => onChange({ ...assessment, date })} />
       <CheckboxInput
         label="Students need to turn something in"
         checked={assessment.requiresTurnIn}
@@ -4472,39 +4751,728 @@ function AssessmentResourceDetail({
   );
 }
 
+function TestResourceEditor({
+  test,
+  scales,
+  onChange,
+}: {
+  test: SubjectResource;
+  scales: AssessmentScale[];
+  onChange: (patch: Partial<SubjectResource>) => void;
+}) {
+  const questions = test.questions ?? [];
+  const updateQuestion = (questionId: string, patch: Partial<NonNullable<SubjectResource["questions"]>[number]>) => {
+    onChange({ questions: questions.map((question) => question.id === questionId ? { ...question, ...patch } : question) });
+  };
+  const updateOption = (questionId: string, optionId: string, patch: Partial<NonNullable<NonNullable<SubjectResource["questions"]>[number]["options"]>[number]>) => {
+    onChange({
+      questions: questions.map((question) => {
+        if (question.id !== questionId) {
+          return question;
+        }
+        return {
+          ...question,
+          options: (question.options ?? []).map((option) => option.id === optionId ? { ...option, ...patch } : option),
+        };
+      }),
+    });
+  };
+  const addOption = (questionId: string) => {
+    onChange({
+      questions: questions.map((question) => question.id === questionId ? {
+        ...question,
+        options: [...(question.options ?? []), { id: `option-${Date.now()}`, text: "New option", correct: false }],
+      } : question),
+    });
+  };
+
+  return (
+    <div className="test-editor">
+      <TextInput label="Test title" value={test.title} onChange={(title) => onChange({ title })} />
+      <TextArea label="Description" value={test.description ?? ""} onChange={(description) => onChange({ description })} />
+      <div className="split-fields">
+        <DateInput label="Due date" value={test.dueDate ?? ""} onChange={(dueDate) => onChange({ dueDate })} />
+        <SelectInput
+          label="Assessment scale"
+          value={test.scaleId ?? ""}
+          options={[{ value: "", label: "No scale" }, ...scales.map((scale) => ({ value: scale.id, label: scale.name }))]}
+          onChange={(scaleId) => onChange({ scaleId })}
+        />
+      </div>
+      <SelectInput
+        label="Grading"
+        value={test.gradingMode ?? "auto"}
+        options={[
+          { value: "auto", label: "Auto grade multiple choice" },
+          { value: "manual", label: "Manual grading" },
+        ]}
+        onChange={(gradingMode) => onChange({ gradingMode: gradingMode as SubjectResource["gradingMode"] })}
+      />
+      <SelectInput
+        label="Publish results"
+        value={test.publishResults ?? "after-review"}
+        options={[
+          { value: "immediately", label: "Immediately after submission" },
+          { value: "after-review", label: "After teacher review" },
+        ]}
+        onChange={(publishResults) => onChange({ publishResults: publishResults as SubjectResource["publishResults"] })}
+      />
+      <CheckboxInput label="Use lobby so all students start together" checked={Boolean(test.lobbyEnabled)} onChange={(lobbyEnabled) => onChange({ lobbyEnabled })} />
+      {test.lobbyEnabled ? (
+        <label className="field-label">
+          Scheduled start
+          <input type="datetime-local" value={test.startsAt ?? ""} onChange={(event) => onChange({ startsAt: event.target.value })} />
+        </label>
+      ) : null}
+      <div className="split-fields">
+        <SelectInput
+          label="Timer"
+          value={test.timerMode ?? "none"}
+          options={[
+            { value: "none", label: "No timer" },
+            { value: "duration", label: "Submit after minutes since start" },
+            { value: "fixed-end", label: "Submit at a set time" },
+          ]}
+          onChange={(timerMode) => onChange({ timerMode: timerMode as SubjectResource["timerMode"] })}
+        />
+        {test.timerMode === "duration" ? (
+          <label className="field-label">
+            Minutes
+            <input type="number" min="1" value={test.timerMinutes ?? 45} onChange={(event) => onChange({ timerMinutes: Number(event.target.value) || 1 })} />
+          </label>
+        ) : test.timerMode === "fixed-end" ? (
+          <label className="field-label">
+            End time
+            <input type="datetime-local" value={test.timerEndsAt ?? ""} onChange={(event) => onChange({ timerEndsAt: event.target.value })} />
+          </label>
+        ) : <span />}
+      </div>
+      <CheckboxInput label="Auto-submit saved answers when time expires" checked={test.autoSubmitOnTimerEnd !== false} onChange={(autoSubmitOnTimerEnd) => onChange({ autoSubmitOnTimerEnd })} />
+      <div className="test-question-list">
+        <div className="test-question-actions">
+          <h3>Questions</h3>
+          <button className="secondary-action" type="button" onClick={() => onChange({ questions: [...questions, createTestQuestion("multiple-choice")] })}>Add multiple choice</button>
+          <button className="secondary-action" type="button" onClick={() => onChange({ questions: [...questions, createTestQuestion("text")] })}>Add text answer</button>
+        </div>
+        {questions.map((question, index) => (
+          <article className="test-question-card" key={question.id}>
+            <div className="test-question-heading">
+              <h4>Question {index + 1}</h4>
+              <button className="remove-button" type="button" onClick={() => onChange({ questions: questions.filter((item) => item.id !== question.id) })}>Remove</button>
+            </div>
+            <SelectInput
+              label="Question type"
+              value={question.type}
+              options={[
+                { value: "multiple-choice", label: "Multiple choice" },
+                { value: "text", label: "Text answer" },
+              ]}
+              onChange={(type) => updateQuestion(question.id, {
+                type: type as "multiple-choice" | "text",
+                ...(type === "multiple-choice" && !question.options?.length ? { options: createTestQuestion("multiple-choice").options } : {}),
+              })}
+            />
+            <TextArea label="Question" value={question.prompt} onChange={(prompt) => updateQuestion(question.id, { prompt })} />
+            <label className="field-label">
+              Marks
+              <input type="number" min="0" step="0.5" value={question.marks ?? 1} onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) || 0 })} />
+            </label>
+            {question.type === "multiple-choice" ? (
+              <>
+                <CheckboxInput label="Allow several correct answers" checked={Boolean(question.allowMultipleCorrect)} onChange={(allowMultipleCorrect) => updateQuestion(question.id, { allowMultipleCorrect })} />
+                <div className="test-option-list">
+                  {(question.options ?? []).map((option) => (
+                    <div className="test-option-row" key={option.id}>
+                      <CheckboxInput label="Correct" checked={Boolean(option.correct)} onChange={(correct) => updateOption(question.id, option.id, { correct })} />
+                      <TextInput label="Option" value={option.text} onChange={(text) => updateOption(question.id, option.id, { text })} />
+                      <button className="remove-button" type="button" onClick={() => updateQuestion(question.id, { options: (question.options ?? []).filter((item) => item.id !== option.id) })}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+                <button className="secondary-action" type="button" onClick={() => addOption(question.id)}>Add option</button>
+              </>
+            ) : <p className="form-status">Text answers are saved for manual teacher review.</p>}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TestResourceView({
+  test,
+  scale,
+  accessLevel,
+  activeStudentId,
+  onSubmissionChange,
+}: {
+  test: SubjectResource;
+  scale?: AssessmentScale;
+  accessLevel: SchoolWorkAccessLevel;
+  activeStudentId?: string;
+  onSubmissionChange: (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => void;
+}) {
+  const questions = test.questions ?? [];
+  const existingSubmission = test.testSubmissions?.find((submission) => submission.studentId === activeStudentId);
+  const [localSubmission, setLocalSubmission] = useState<NonNullable<SubjectResource["testSubmissions"]>[number]>(() => existingSubmission ?? {
+    studentId: activeStudentId ?? "student",
+    answers: {},
+  });
+  const storageKey = `edulink-test-${test.id}-${activeStudentId ?? "student"}`;
+  const submitted = Boolean(localSubmission.submittedAt);
+  const testStarted = Boolean(localSubmission.startedAt);
+  const scheduledStartDate = test.startsAt ? new Date(test.startsAt) : null;
+  const scheduledStartReached = !scheduledStartDate || scheduledStartDate.getTime() <= Date.now();
+  const shouldUseLobby = Boolean(test.lobbyEnabled) || Boolean(test.startsAt);
+  const canStartFromLobby = scheduledStartReached;
+  const timerDeadline = (() => {
+    if (test.timerMode === "duration" && localSubmission.startedAt) {
+      return new Date(new Date(localSubmission.startedAt).getTime() + (test.timerMinutes ?? 45) * 60_000);
+    }
+    if (test.timerMode === "fixed-end" && test.timerEndsAt) {
+      return new Date(test.timerEndsAt);
+    }
+    return null;
+  })();
+
+  useEffect(() => {
+    if (!activeStudentId) {
+      return;
+    }
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored && !existingSubmission?.submittedAt) {
+      try {
+        const parsed = JSON.parse(stored) as typeof localSubmission;
+        setLocalSubmission(parsed);
+      } catch {
+        // Ignore malformed local test backups.
+      }
+    }
+  }, [activeStudentId, existingSubmission?.submittedAt, storageKey]);
+
+  useEffect(() => {
+    if (!timerDeadline || submitted || test.autoSubmitOnTimerEnd === false) {
+      return undefined;
+    }
+    const delay = timerDeadline.getTime() - Date.now();
+    if (delay <= 0) {
+      submit(true);
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => submit(true), delay);
+    return () => window.clearTimeout(timeout);
+  }, [submitted, test.autoSubmitOnTimerEnd, timerDeadline?.getTime()]);
+
+  const saveSubmission = (submission: typeof localSubmission) => {
+    setLocalSubmission(submission);
+    window.localStorage.setItem(storageKey, JSON.stringify(submission));
+    onSubmissionChange(submission);
+  };
+  const updateAnswer = (questionId: string, answer: string | string[]) => {
+    if (!activeStudentId || submitted || (shouldUseLobby && !testStarted)) {
+      return;
+    }
+    saveSubmission({
+      ...localSubmission,
+      studentId: activeStudentId,
+      startedAt: localSubmission.startedAt ?? new Date().toISOString(),
+      lastSavedAt: new Date().toISOString(),
+      answers: { ...localSubmission.answers, [questionId]: answer },
+    });
+  };
+  const submit = (autoSubmitted = false) => {
+    if (!activeStudentId) {
+      return;
+    }
+    const autoGrade = test.gradingMode !== "manual" ? getTestAutoGrade(test, localSubmission, scale) : null;
+    saveSubmission({
+      ...localSubmission,
+      studentId: activeStudentId,
+      startedAt: localSubmission.startedAt ?? new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      lastSavedAt: new Date().toISOString(),
+      autoSubmitted,
+      ...(autoGrade ? {
+        score: autoGrade.score,
+        maxScore: autoGrade.maxScore,
+        percentage: autoGrade.percentage,
+        levelId: autoGrade.level?.id,
+      } : {}),
+    });
+  };
+  const startTest = () => {
+    if (!activeStudentId || submitted) {
+      return;
+    }
+    saveSubmission({
+      ...localSubmission,
+      studentId: activeStudentId,
+      startedAt: localSubmission.startedAt ?? new Date().toISOString(),
+      lastSavedAt: new Date().toISOString(),
+    });
+  };
+
+  if (accessLevel !== "student") {
+    return (
+      <div className="test-summary">
+        <p>{test.description || "No description yet."}</p>
+        <div className="assessment-meta-list">
+          <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Due:</strong> {test.dueDate || "No due date"}</p>
+          <p><FontAwesomeIcon icon={faRulerCombined} fixedWidth /><strong>Scale:</strong> {scale?.name ?? "No scale"}</p>
+          <p><ClipboardCheck size={16} /><strong>Grading:</strong> {(test.gradingMode ?? "auto") === "auto" ? "Auto grading" : "Manual grading"}</p>
+          <p><Clock size={16} /><strong>Timer:</strong> {getTestTimerLabel(test)}</p>
+        </div>
+        <TestSubmittedResults test={test} scale={scale} onSubmissionChange={onSubmissionChange} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="test-taking-view">
+      <p>{test.description || "No description yet."}</p>
+      {shouldUseLobby && !testStarted ? <div className="empty-editor-state">
+        <h3>Waiting in lobby</h3>
+        <p>{scheduledStartDate && !scheduledStartReached ? `This test opens at ${formatDateTime(scheduledStartDate.toISOString())}.` : "Your answers begin saving after you start the test."}</p>
+        <button className="primary-action" type="button" onClick={startTest} disabled={!canStartFromLobby}>Start test</button>
+      </div> : null}
+      <div className="assessment-meta-list">
+        <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Due:</strong> {test.dueDate || "No due date"}</p>
+        <p><Clock size={16} /><strong>Timer:</strong> {getTestTimerLabel(test)}</p>
+        {timerDeadline ? <p><Clock size={16} /><strong>Auto-submit:</strong> {formatDateTime(timerDeadline.toISOString())}</p> : null}
+        <p><Save size={16} /><strong>Autosave:</strong> {localSubmission.lastSavedAt ? formatDateTime(localSubmission.lastSavedAt) : "Not saved yet"}</p>
+      </div>
+      {submitted && (test.publishResults === "immediately" || localSubmission.reviewed) && (test.gradingMode ?? "auto") === "auto" ? (() => {
+        const result = getTestAutoGrade(test, localSubmission, scale);
+        return <div className="student-graded-assessment-summary">
+          <p><strong>Result:</strong> {result.score}/{result.maxScore} ({result.percentage}%)</p>
+          <p><strong>Level:</strong> {result.level?.value ?? "No level"}</p>
+        </div>;
+      })() : submitted && test.publishResults === "after-review" ? (
+        <p className="form-status">Submitted. Results will be published after review.</p>
+      ) : null}
+      {questions.map((question, index) => {
+        const answer = localSubmission.answers[question.id];
+        return (
+          <article className="test-question-card" key={question.id}>
+            <h4>{index + 1}. {question.prompt} ({question.marks ?? 1} mark{(question.marks ?? 1) === 1 ? "" : "s"})</h4>
+            {question.type === "multiple-choice" ? (
+              <div className="test-answer-options">
+                {(question.options ?? []).map((option) => {
+                  const selectedAnswers = Array.isArray(answer) ? answer : answer ? [answer] : [];
+                  return (
+                    <label className="checkbox-field" key={option.id}>
+                      <input
+                        type={question.allowMultipleCorrect ? "checkbox" : "radio"}
+                        name={question.id}
+                        checked={selectedAnswers.includes(option.id)}
+                        disabled={submitted}
+                        onChange={(event) => {
+                          if (question.allowMultipleCorrect) {
+                            updateAnswer(question.id, event.target.checked ? mergeUnique([...selectedAnswers, option.id]) : selectedAnswers.filter((id) => id !== option.id));
+                          } else {
+                            updateAnswer(question.id, option.id);
+                          }
+                        }}
+                      />
+                      <span>{option.text}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <TextArea label="Answer" value={typeof answer === "string" ? answer : ""} onChange={(value) => updateAnswer(question.id, value)} />
+            )}
+          </article>
+        );
+      })}
+      <button className="primary-action" type="button" disabled={submitted} onClick={() => submit(false)}>
+        {submitted ? "Submitted" : "Submit test"}
+      </button>
+    </div>
+  );
+}
+
+function TestSubmittedResults({
+  test,
+  scale,
+  onSubmissionChange,
+}: {
+  test: SubjectResource;
+  scale?: AssessmentScale;
+  onSubmissionChange: (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => void;
+}) {
+  const questions = test.questions ?? [];
+  const submissions = (test.testSubmissions ?? []).filter((submission) => submission.submittedAt);
+
+  return (
+    <section className="test-question-list">
+      <div>
+        <h3>Submitted results</h3>
+        <p className="form-status">{submissions.length} submitted result{submissions.length === 1 ? "" : "s"}</p>
+      </div>
+      {submissions.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No submitted results yet</h3>
+          <p>Student and teacher preview submissions will appear here after the test is submitted.</p>
+        </div>
+      ) : submissions.map((submission) => (
+        <article className="test-question-card" key={submission.studentId}>
+          <div className="test-question-heading">
+            <h4>{submission.studentId === "preview" ? "Teacher preview" : `Student: ${submission.studentId}`}</h4>
+            <button className="secondary-action" type="button" onClick={() => onSubmissionChange({ ...submission, reviewed: true })}>
+              {submission.reviewed ? "Reviewed" : "Mark reviewed"}
+            </button>
+          </div>
+          {(test.gradingMode ?? "auto") === "auto" ? (() => {
+            const result = getTestAutoGrade(test, submission, scale);
+            return <p className="form-status">Auto grade: {result.score}/{result.maxScore} ({result.percentage}%){result.level ? ` · ${result.level.value}` : ""}</p>;
+          })() : <p className="form-status">Manual grading required.</p>}
+          {questions.map((question) => {
+            const answer = submission.answers[question.id];
+            const optionLabels = Array.isArray(answer)
+              ? answer.map((optionId) => question.options?.find((option) => option.id === optionId)?.text ?? optionId).join(", ")
+              : question.options?.find((option) => option.id === answer)?.text ?? answer;
+            return (
+              <div className="test-review-answer" key={question.id}>
+                <strong>{question.prompt} ({question.marks ?? 1} mark{(question.marks ?? 1) === 1 ? "" : "s"})</strong>
+                <p>{optionLabels || "No answer"}</p>
+              </div>
+            );
+          })}
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function SchoolWorkSubjectSettings({
+  globalAssessmentScales,
+  settings,
+  onChange,
+}: {
+  globalAssessmentScales: AssessmentScale[];
+  settings: SchoolWorkSettings;
+  onChange: (settings: SchoolWorkSettings) => void;
+}) {
+  const enabledGlobalIds = settings.enabledGlobalAssessmentScaleIds ?? [];
+  const customScales = settings.customAssessmentScales ?? [];
+  const setCustomScale = (scaleIndex: number, scale: AssessmentScale) => {
+    onChange({
+      ...settings,
+      customAssessmentScales: customScales.map((item, index) => index === scaleIndex ? scale : item),
+    });
+  };
+
+  return (
+    <section className="subject-overview-panel school-work-settings-panel">
+      <div className="subject-student-heading">
+        <h3>Settings</h3>
+        <span>Assessment scales</span>
+      </div>
+      <div className="settings-scale-section">
+        <h4>Global assessment scales</h4>
+        <p>Global scales are managed by superadmins. Schools can disable scales they do not want to use.</p>
+        {globalAssessmentScales.length === 0 ? (
+          <div className="empty-editor-state">
+            <h3>No global scales available</h3>
+            <p>Add global scales from the superadmin settings.</p>
+          </div>
+        ) : (
+          <div className="settings-scale-list">
+            {globalAssessmentScales.map((scale) => (
+              <article className="settings-scale-card readonly-scale-card" key={scale.id}>
+                <div>
+                  <h4>{scale.name}</h4>
+                  <p>{formatAssessmentScaleSummary(scale)}</p>
+                  <small>{scale.levels.map((level) => level.value).join(", ")}</small>
+                </div>
+                <CheckboxInput
+                  label="Enabled"
+                  checked={enabledGlobalIds.includes(scale.id)}
+                  onChange={(checked) => onChange({
+                    ...settings,
+                    knownGlobalAssessmentScaleIds: globalAssessmentScales.map((item) => item.id),
+                    enabledGlobalAssessmentScaleIds: checked
+                      ? mergeUnique([...enabledGlobalIds, scale.id])
+                      : enabledGlobalIds.filter((id) => id !== scale.id),
+                  })}
+                />
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="settings-scale-section">
+        <div className="test-question-actions">
+          <div>
+            <h4>School assessment scales</h4>
+            <p>Create scales that only this school uses.</p>
+          </div>
+          <button className="secondary-action" type="button" onClick={() => onChange({
+            ...settings,
+            customAssessmentScales: [...customScales, createCustomAssessmentScale()],
+          })}>
+            Add assessment scale
+          </button>
+        </div>
+        {customScales.length === 0 ? (
+          <div className="empty-editor-state">
+            <h3>No school-specific scales yet</h3>
+            <p>Add a custom scale if this school needs its own grading language.</p>
+          </div>
+        ) : (
+          <div className="settings-scale-list">
+            {customScales.map((scale, scaleIndex) => (
+              <article className="settings-scale-card" key={scale.id}>
+                <TextInput label="Scale name" value={scale.name} onChange={(name) => setCustomScale(scaleIndex, { ...scale, name })} />
+                <TextInput label="Scale id" value={scale.id} onChange={(id) => setCustomScale(scaleIndex, { ...scale, id: slugifySchoolName(id) })} />
+                <div className="test-question-actions">
+                  <h4>Levels</h4>
+                  <button className="secondary-action" type="button" onClick={() => setCustomScale(scaleIndex, {
+                    ...scale,
+                    levels: [...scale.levels, { id: `level-${Date.now()}`, value: "New level", minPercentage: 0 }],
+                  })}>
+                    Add level
+                  </button>
+                </div>
+                {scale.levels.map((level, levelIndex) => (
+                  <div className="assessment-level-row" key={level.id}>
+                    <TextInput label="Value" value={level.value} onChange={(value) => setCustomScale(scaleIndex, {
+                      ...scale,
+                      levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value } : item),
+                    })} />
+                    <label className="field-label">
+                      Minimum percentage
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={level.minPercentage}
+                        onChange={(event) => setCustomScale(scaleIndex, {
+                          ...scale,
+                          levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: Number(event.target.value) } : item),
+                        })}
+                      />
+                    </label>
+                    <button className="remove-button" type="button" onClick={() => setCustomScale(scaleIndex, {
+                      ...scale,
+                      levels: scale.levels.filter((_, index) => index !== levelIndex),
+                    })}>
+                      Remove level
+                    </button>
+                  </div>
+                ))}
+                <button className="remove-button" type="button" onClick={() => onChange({
+                  ...settings,
+                  customAssessmentScales: customScales.filter((_, index) => index !== scaleIndex),
+                })}>
+                  Remove scale
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type ChatParticipant = {
+  id: string;
+  name: string;
+  role: "admin" | "teacher" | "staff" | "student";
+};
+
+function SchoolChatPopup({
+  school,
+  identity,
+  messages,
+  onClose,
+  onMessagesChange,
+}: {
+  school: School;
+  identity: SchoolWorkIdentity;
+  messages: SchoolChatMessage[];
+  onClose: () => void;
+  onMessagesChange: (messages: SchoolChatMessage[]) => void;
+}) {
+  const currentUser = getCurrentChatParticipant(school, identity);
+  const participants = getSchoolChatParticipants(school);
+  const recipients = participants.filter((participant) => canMessageParticipant(currentUser, participant, Boolean(school.schoolWorkSettings?.allowStudentMessaging)));
+  const conversationRecipients = recipients.filter((participant) => messages.some((message) =>
+    (message.fromId === currentUser.id && message.toId === participant.id) ||
+    (message.fromId === participant.id && message.toId === currentUser.id)));
+  const [recipientId, setRecipientId] = useState(() => conversationRecipients[0]?.id ?? "");
+  const [recipientPickerOpen, setRecipientPickerOpen] = useState(false);
+  const [recipientSearch, setRecipientSearch] = useState("");
+  const [body, setBody] = useState("");
+  const activeRecipient = recipients.find((participant) => participant.id === recipientId) ?? conversationRecipients[0] ?? null;
+  const searchableRecipients = recipients.filter((participant) =>
+    `${participant.name} ${participant.role}`.toLowerCase().includes(recipientSearch.trim().toLowerCase()));
+  const threadMessages = activeRecipient
+    ? messages
+      .filter((message) =>
+        (message.fromId === currentUser.id && message.toId === activeRecipient.id) ||
+        (message.fromId === activeRecipient.id && message.toId === currentUser.id))
+      .sort((first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime())
+    : [];
+
+  const sendMessage = () => {
+    const trimmedBody = body.trim();
+    if (!trimmedBody || !activeRecipient) {
+      return;
+    }
+    onMessagesChange([
+      ...messages,
+      {
+        id: `message-${Date.now()}`,
+        fromId: currentUser.id,
+        fromName: currentUser.name,
+        toId: activeRecipient.id,
+        toName: activeRecipient.name,
+        body: trimmedBody,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setBody("");
+  };
+
+  return (
+    <div className="modal-backdrop chat-popup-backdrop" role="presentation">
+      <section className="chat-popup" role="dialog" aria-modal="true" aria-labelledby="chat-popup-title">
+        <div className="chat-popup-header">
+          <div>
+            <p className="eyebrow">Messages</p>
+            <h2 id="chat-popup-title">School chat</h2>
+          </div>
+          <button className="secondary-action" type="button" onClick={onClose}>Close</button>
+        </div>
+        <div className="chat-popup-layout">
+          <aside className="chat-recipient-list">
+            <div className="chat-recipient-heading">
+              <strong>Conversations</strong>
+              <button className="icon-action" type="button" onClick={() => setRecipientPickerOpen((open) => !open)} aria-label="Start conversation">
+                <Plus size={16} />
+              </button>
+            </div>
+            {recipientPickerOpen ? (
+              <div className="chat-recipient-picker">
+                <input value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} placeholder="Search users" />
+                <div>
+                  {searchableRecipients.length === 0 ? <p>No matching users.</p> : searchableRecipients.map((participant) => (
+                    <button
+                      key={participant.id}
+                      type="button"
+                      onClick={() => {
+                        setRecipientId(participant.id);
+                        setRecipientPickerOpen(false);
+                        setRecipientSearch("");
+                      }}
+                    >
+                      <strong>{participant.name}</strong>
+                      <span>{participant.role}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {conversationRecipients.length === 0 ? (
+              <p>No conversations yet.</p>
+            ) : conversationRecipients.map((participant) => (
+                <button
+                  className={participant.id === activeRecipient?.id ? "active-chat-recipient" : ""}
+                  key={participant.id}
+                  type="button"
+                  onClick={() => setRecipientId(participant.id)}
+                >
+                  <strong>{participant.name}</strong>
+                  <span>{participant.role}</span>
+                </button>
+              ))}
+          </aside>
+          <section className="chat-thread">
+            {activeRecipient ? (
+              <>
+                <div className="chat-thread-heading">
+                  <h3>{activeRecipient.name}</h3>
+                  <span>{activeRecipient.role}</span>
+                </div>
+                <div className="chat-message-list">
+                  {threadMessages.length === 0 ? (
+                    <div className="empty-editor-state">
+                      <h3>No messages yet</h3>
+                      <p>Start the conversation below.</p>
+                    </div>
+                  ) : threadMessages.map((message) => (
+                    <article className={message.fromId === currentUser.id ? "chat-message own-chat-message" : "chat-message"} key={message.id}>
+                      <strong>{message.fromName}</strong>
+                      <p>{message.body}</p>
+                      <time>{formatDateTime(message.createdAt)}</time>
+                    </article>
+                  ))}
+                </div>
+                <form
+                  className="chat-compose"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    sendMessage();
+                  }}
+                >
+                  <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} placeholder="Write a message" />
+                  <button className="primary-action" type="submit">Send</button>
+                </form>
+              </>
+            ) : (
+              <div className="empty-editor-state">
+                <h3>No recipients available</h3>
+                <p>Messaging is limited by the school chat settings.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SubjectClassWorkPage({
   subjectClass,
   subjects,
   students,
   assessmentScales,
+  globalAssessmentScales = [],
+  schoolWorkSettings,
   accessLevel = "admin",
   activeStudentId,
   graderLabel,
   onBack,
   onChange,
+  onSchoolWorkSettingsChange,
 }: {
   subjectClass: SubjectClass | null;
   subjects: Subject[];
   students: Student[];
   assessmentScales: AssessmentScale[];
+  globalAssessmentScales?: AssessmentScale[];
+  schoolWorkSettings?: SchoolWorkSettings;
   accessLevel?: SchoolWorkAccessLevel;
   activeStudentId?: string;
   graderLabel?: string;
   onBack: () => void;
   onChange: (subjectClass: SubjectClass) => void;
+  onSchoolWorkSettingsChange?: (settings: SchoolWorkSettings) => void | Promise<void>;
 }) {
-  const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "students">("resources");
+  const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "students" | "settings">("resources");
   const [selectedFolderId, setSelectedFolderId] = useState("root");
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
+  const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
   const [showFolderResourcePicker, setShowFolderResourcePicker] = useState(false);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set(["root"]));
   const [dragTargetFolderId, setDragTargetFolderId] = useState<string | null>(null);
   const [draftAnnouncement, setDraftAnnouncement] = useState<Pick<SubjectClassAnnouncement, "title" | "body">>({ title: "", body: "" });
-  const [assessmentModalIndex, setAssessmentModalIndex] = useState<number | null | undefined>(undefined);
-  const [draftAssessment, setDraftAssessment] = useState<Assessment>(() => createAssessment(assessmentScales));
   const [selectedGradeAssessmentId, setSelectedGradeAssessmentId] = useState<string | null>(null);
   const [activeStatusView, setActiveStatusView] = useState<"assessmentRecord">("assessmentRecord");
   const committedResources = useMemo(() => subjectClass?.resources ?? [], [subjectClass?.resources]);
@@ -4513,6 +5481,8 @@ function SubjectClassWorkPage({
   const recordedStudentOpenKey = useRef<string | null>(null);
   const [draftResources, setDraftResources] = useState<SubjectResource[]>(committedResources);
   const [hasUnsavedResourceChanges, setHasUnsavedResourceChanges] = useState(false);
+  const [previewTest, setPreviewTest] = useState<SubjectResource | null>(null);
+  const [previewSubmission, setPreviewSubmission] = useState<NonNullable<SubjectResource["testSubmissions"]>[number]>({ studentId: "preview", answers: {} });
 
   useEffect(() => {
     if (accessLevel === "student" && activeWorkTab !== "resources" && activeWorkTab !== "status") {
@@ -4564,6 +5534,13 @@ function SubjectClassWorkPage({
   const subject = subjects.find((item) => item.id === subjectClass.subjectId);
   const canCreateSchoolWork = accessLevel === "admin" || accessLevel === "teacher";
   const canGradeSchoolWork = accessLevel === "admin" || accessLevel === "teacher";
+  const canManageSchoolWorkSettings = accessLevel === "admin" || accessLevel === "teacher";
+  const effectiveSchoolWorkSettings = schoolWorkSettings ?? {
+    enabledGlobalAssessmentScaleIds: globalAssessmentScales.map((scale) => scale.id),
+    knownGlobalAssessmentScaleIds: globalAssessmentScales.map((scale) => scale.id),
+    allowStudentMessaging: false,
+    customAssessmentScales: [],
+  };
   const announcements = subjectClass.announcements ?? [];
   const assessments = subjectClass.assessments ?? [];
   const subjectClassStudents = students.filter((student) => subjectClass.studentIds.includes(student.id));
@@ -4598,12 +5575,8 @@ function SubjectClassWorkPage({
   const updateFolders = (nextFolders: ResourceFolder[]) => onChange({ ...subjectClass, resourceFolders: nextFolders });
   const updateResources = (nextResources: SubjectResource[]) => onChange({ ...subjectClass, resources: nextResources });
   const updateAssessments = (nextAssessments: Assessment[]) => onChange({ ...subjectClass, assessments: nextAssessments });
-  const saveDraftAssessment = () => {
-    const assessmentWithGrades = ensureAssessmentGrades(draftAssessment, subjectClassStudents);
-    updateAssessments(assessmentModalIndex === null
-      ? [...assessments, assessmentWithGrades]
-      : assessments.map((assessment, index) => index === assessmentModalIndex ? assessmentWithGrades : assessment));
-    setAssessmentModalIndex(undefined);
+  const updateAssessment = (assessmentId: string, patch: Partial<Assessment>) => {
+    updateAssessments(assessments.map((assessment) => assessment.id === assessmentId ? ensureAssessmentGrades({ ...assessment, ...patch }, subjectClassStudents) : assessment));
   };
   const updateAssessmentGrade = (assessmentId: string, studentId: string, patch: Partial<AssessmentGrade>) => {
     const isGradingPatch = canGradeSchoolWork && ("levelId" in patch || "feedback" in patch);
@@ -4650,6 +5623,7 @@ function SubjectClassWorkPage({
     setSelectedAssessmentId(null);
     setEditingFolderId(null);
     setEditingResourceId(null);
+    setEditingAssessmentId(null);
     setShowFolderResourcePicker(false);
     setExpandedFolderIds((current) => new Set(current).add(folderId));
   };
@@ -4659,6 +5633,7 @@ function SubjectClassWorkPage({
     setSelectedAssessmentId(null);
     setEditingFolderId(null);
     setEditingResourceId(null);
+    setEditingAssessmentId(null);
     setShowFolderResourcePicker(false);
   };
   const selectAssessment = (assessment: Assessment) => {
@@ -4667,6 +5642,7 @@ function SubjectClassWorkPage({
     setSelectedAssessmentId(assessment.id);
     setEditingFolderId(null);
     setEditingResourceId(null);
+    setEditingAssessmentId(null);
     setShowFolderResourcePicker(false);
   };
   const toggleTreeFolder = (folderId: string) => {
@@ -4698,6 +5674,19 @@ function SubjectClassWorkPage({
     setShowFolderResourcePicker(false);
   };
   const addResource = (type: SubjectResource["type"]) => {
+    if (type === "test") {
+      const resource = createTestResource(activeFolderId);
+      const nextResources = [...committedResources, resource];
+      updateResources(nextResources);
+      setDraftResources(nextResources);
+      setSelectedResourceId(resource.id);
+      setSelectedAssessmentId(null);
+      setEditingResourceId(resource.id);
+      setHasUnsavedResourceChanges(false);
+      setShowFolderResourcePicker(false);
+      return;
+    }
+
     const resource: SubjectResource = {
       id: `resource-${type}-${Date.now()}`,
       type,
@@ -4715,6 +5704,13 @@ function SubjectClassWorkPage({
   const updateResource = (resourceId: string, patch: Partial<SubjectResource>) => {
     setDraftResources(resources.map((resource) => resource.id === resourceId ? { ...resource, ...patch } : resource));
     setHasUnsavedResourceChanges(true);
+  };
+  const autoSaveResource = (resourceId: string, patch: Partial<SubjectResource>) => {
+    const nextResources = resources.map((resource) => resource.id === resourceId ? { ...resource, ...patch } : resource);
+    setDraftResources(nextResources);
+    pendingResourceSaveSignature.current = JSON.stringify(nextResources);
+    updateResources(nextResources);
+    setHasUnsavedResourceChanges(false);
   };
   const uploadPictureResourceImage = async (resourceId: string, file: File | undefined) => {
     if (!file) {
@@ -4795,10 +5791,11 @@ function SubjectClassWorkPage({
     setDragTargetFolderId(null);
   };
   const addAssessmentResource = () => {
-    const assessment = createAssessment(assessmentScales, activeFolderId);
-    updateAssessments([...assessments, ensureAssessmentGrades(assessment, subjectClassStudents)]);
+    const assessment = ensureAssessmentGrades(createAssessment(assessmentScales, activeFolderId), subjectClassStudents);
+    updateAssessments([...assessments, assessment]);
     setSelectedAssessmentId(assessment.id);
     setSelectedResourceId(null);
+    setEditingAssessmentId(assessment.id);
     setShowFolderResourcePicker(false);
   };
   const resourceTypePicker = (
@@ -4836,6 +5833,13 @@ function SubjectClassWorkPage({
         <span>
           <strong>Assessment</strong>
           <small>Create work to grade students and provide feedback.</small>
+        </span>
+      </button>
+      <button className="resource-type-card" type="button" onClick={() => addResource("test")}>
+        <CheckSquare size={34} />
+        <span>
+          <strong>Test</strong>
+          <small>Create timed questions with autosaved student answers.</small>
         </span>
       </button>
     </div>
@@ -4928,7 +5932,7 @@ function SubjectClassWorkPage({
                 style={{ "--tree-depth": depth } as React.CSSProperties}
               >
                 <span className="resource-tree-spacer" />
-                {resource.type === "note" ? <FileText size={16} /> : <Link2 size={16} />}
+                {resource.type === "note" ? <FileText size={16} /> : resource.type === "link" ? <Link2 size={16} /> : resource.type === "test" ? <CheckSquare size={16} /> : <Image size={16} />}
                 <span>{resource.title}</span>
               </button>
             ))}
@@ -4999,6 +6003,7 @@ function SubjectClassWorkPage({
           <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("resources")}>Resources</button>
           <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("status")}>Status and follow-up</button>
           {accessLevel !== "student" ? <button className={activeWorkTab === "students" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("students")}>Students</button> : null}
+          {canManageSchoolWorkSettings ? <button className={activeWorkTab === "settings" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("settings")}>Settings</button> : null}
         </span>
         <span className="subject-work-nav-spacer" aria-hidden="true" />
       </nav>
@@ -5066,14 +6071,18 @@ function SubjectClassWorkPage({
               return (
                 <div className="empty-editor-state">
                   <h3>Assessment not found</h3>
-                  <button className="secondary-action" type="button" onClick={() => setSelectedGradeAssessmentId(null)}>Back to assessment record</button>
+                  <button className="assessment-back-link" type="button" onClick={() => setSelectedGradeAssessmentId(null)}>
+                    <ArrowLeft size={16} />
+                    Back to assessment record
+                  </button>
                 </div>
               );
             }
             return (
               <div className="assessment-detail-page">
                 <div className="editor-back-row">
-                  <button className="secondary-action" type="button" onClick={() => setSelectedGradeAssessmentId(null)}>
+                  <button className="assessment-back-link" type="button" onClick={() => setSelectedGradeAssessmentId(null)}>
+                    <ArrowLeft size={16} />
                     Back to assessment record
                   </button>
                 </div>
@@ -5083,8 +6092,11 @@ function SubjectClassWorkPage({
                   students={subjectClassStudents}
                   onEdit={() => {
                     const assessmentIndex = assessments.findIndex((item) => item.id === selectedAssessment.id);
-                    setDraftAssessment(ensureAssessmentGrades(selectedAssessment, subjectClassStudents));
-                    setAssessmentModalIndex(assessmentIndex >= 0 ? assessmentIndex : null);
+                    if (assessmentIndex >= 0) {
+                      setSelectedAssessmentId(selectedAssessment.id);
+                      setEditingAssessmentId(selectedAssessment.id);
+                      setActiveWorkTab("resources");
+                    }
                   }}
                   onRemove={() => {
                     updateAssessments(assessments.filter((assessment) => assessment.id !== selectedAssessment.id));
@@ -5105,21 +6117,6 @@ function SubjectClassWorkPage({
             </>
           )}
         </section>
-      ) : null}
-      {assessmentModalIndex !== undefined ? (
-        <RegistrationModal
-          title={assessmentModalIndex === null ? "Create assessment" : "Edit assessment"}
-          eyebrow="Assessment"
-          submitLabel={assessmentModalIndex === null ? "Create assessment" : "Save assessment"}
-          onClose={() => setAssessmentModalIndex(undefined)}
-          onSubmit={saveDraftAssessment}
-        >
-          <AssessmentFields
-            assessment={draftAssessment}
-            scales={assessmentScales}
-            onChange={setDraftAssessment}
-          />
-        </RegistrationModal>
       ) : null}
       {activeWorkTab === "students" ? (
         <section className="subject-overview-panel">
@@ -5155,6 +6152,13 @@ function SubjectClassWorkPage({
             </div>
           )}
         </section>
+      ) : null}
+      {activeWorkTab === "settings" && canManageSchoolWorkSettings ? (
+        <SchoolWorkSubjectSettings
+          globalAssessmentScales={globalAssessmentScales}
+          settings={effectiveSchoolWorkSettings}
+          onChange={(settings) => void onSchoolWorkSettingsChange?.(settings)}
+        />
       ) : null}
       {activeWorkTab === "resources" ? (
         <div className="resource-workspace">
@@ -5250,7 +6254,7 @@ function SubjectClassWorkPage({
             {selectedResource ? (
               <article className="resource-list-item resource-detail-card">
                 <div className="resource-list-item-heading">
-                  {selectedResource.type === "note" ? <FileText size={22} /> : selectedResource.type === "link" ? <Link2 size={22} /> : <Image size={22} />}
+                  {selectedResource.type === "note" ? <FileText size={22} /> : selectedResource.type === "link" ? <Link2 size={22} /> : selectedResource.type === "test" ? <CheckSquare size={22} /> : <Image size={22} />}
                   {selectedResource.type === "note" && editingResourceId !== selectedResource.id ? <span /> : <strong>{selectedResource.title}</strong>}
                   {canCreateSchoolWork ? <div className="resource-detail-actions">
                     {editingResourceId === selectedResource.id ? (
@@ -5276,7 +6280,11 @@ function SubjectClassWorkPage({
                 {canCreateSchoolWork && editingResourceId === selectedResource.id ? (
                   <>
                     <TextInput label="Title" value={selectedResource.title} onChange={(title) => updateResource(selectedResource.id, { title })} />
-                    {selectedResource.type === "link" ? (
+                    {selectedResource.type === "test" ? (
+                      <>
+                        <TestResourceEditor test={selectedResource} scales={assessmentScales} onChange={(patch) => updateResource(selectedResource.id, patch)} />
+                      </>
+                    ) : selectedResource.type === "link" ? (
                       <TextInput label="URL" value={selectedResource.url ?? ""} onChange={(url) => updateResource(selectedResource.id, { url })} />
                     ) : selectedResource.type === "picture" ? (
                       <>
@@ -5293,7 +6301,38 @@ function SubjectClassWorkPage({
                   </>
                 ) : (
                   <div className={selectedResource.type === "note" ? "resource-note-readonly" : "resource-readonly-content"}>
-                    {selectedResource.type === "link" ? (
+                    {selectedResource.type === "test" ? (
+                      <>
+                        {canCreateSchoolWork ? (
+                          <button
+                            className="primary-action test-start-button"
+                            type="button"
+                            onClick={() => {
+                              setPreviewTest({ ...selectedResource, lobbyEnabled: true });
+                              setPreviewSubmission({ studentId: "preview", answers: {} });
+                            }}
+                          >
+                            <ClipboardCheck size={16} />
+                            Begin test
+                          </button>
+                        ) : null}
+                        <TestResourceView
+                          test={selectedResource}
+                          scale={assessmentScales.find((scale) => scale.id === selectedResource.scaleId)}
+                          accessLevel={accessLevel}
+                          activeStudentId={activeStudentId}
+                          onSubmissionChange={(submission) => {
+                            const submissions = selectedResource.testSubmissions ?? [];
+                            autoSaveResource(selectedResource.id, {
+                              testSubmissions: [
+                                ...submissions.filter((item) => item.studentId !== submission.studentId),
+                                submission,
+                              ],
+                            });
+                          }}
+                        />
+                      </>
+                    ) : selectedResource.type === "link" ? (
                       selectedResource.url ? <a href={selectedResource.url} target="_blank" rel="noreferrer">{selectedResource.url}</a> : <span>No URL added.</span>
                     ) : selectedResource.type === "picture" ? (
                       <div className="resource-picture-readonly">
@@ -5310,23 +6349,40 @@ function SubjectClassWorkPage({
                 )}
               </article>
             ) : selectedAssessment ? (
-              <AssessmentResourceDetail
-                assessment={selectedAssessment}
-                scale={assessmentScales.find((scale) => scale.id === selectedAssessment.scaleId) ?? assessmentScales[0]}
-                students={subjectClassStudents}
-                onEdit={() => {
-                  if (!canGradeSchoolWork) {
-                    return;
-                  }
-                  const assessmentIndex = assessments.findIndex((assessment) => assessment.id === selectedAssessment.id);
-                  setDraftAssessment(ensureAssessmentGrades(selectedAssessment, subjectClassStudents));
-                  setAssessmentModalIndex(assessmentIndex >= 0 ? assessmentIndex : null);
-                }}
-                onRemove={() => canGradeSchoolWork ? removeAssessment(selectedAssessment.id) : undefined}
-                onGradeChange={(studentId, patch) => updateAssessmentGrade(selectedAssessment.id, studentId, patch)}
-                mode={accessLevel === "student" ? "student-submit" : "grade"}
-                activeStudentId={activeStudentId}
-              />
+              editingAssessmentId === selectedAssessment.id && canGradeSchoolWork ? (
+                <article className="resource-list-item resource-detail-card assessment-card">
+                  <div className="resource-list-item-heading">
+                    <ClipboardCheck size={22} />
+                    <strong>{selectedAssessment.title}</strong>
+                    <div className="resource-detail-actions">
+                      <button className="secondary-action" type="button" onClick={() => setEditingAssessmentId(null)}>
+                        <Save size={16} />
+                        Done
+                      </button>
+                      <button className="remove-button" type="button" onClick={() => removeAssessment(selectedAssessment.id)}>
+                        <Trash2 size={16} />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <AssessmentFields
+                    assessment={selectedAssessment}
+                    scales={assessmentScales}
+                    onChange={(assessment) => updateAssessment(selectedAssessment.id, assessment)}
+                  />
+                </article>
+              ) : (
+                <AssessmentResourceDetail
+                  assessment={selectedAssessment}
+                  scale={assessmentScales.find((scale) => scale.id === selectedAssessment.scaleId) ?? assessmentScales[0]}
+                  students={subjectClassStudents}
+                  onEdit={() => canGradeSchoolWork ? setEditingAssessmentId(selectedAssessment.id) : undefined}
+                  onRemove={() => canGradeSchoolWork ? removeAssessment(selectedAssessment.id) : undefined}
+                  onGradeChange={(studentId, patch) => updateAssessmentGrade(selectedAssessment.id, studentId, patch)}
+                  mode={accessLevel === "student" ? "student-submit" : "grade"}
+                  activeStudentId={activeStudentId}
+                />
+              )
             ) : (
               <>
                 {oneLevelUpTargetId || canCreateSchoolWork ? (
@@ -5361,12 +6417,14 @@ function SubjectClassWorkPage({
                     {folderResources.map((resource) => (
                       <article className="resource-list-item folder-resource-item resource-preview-item" key={resource.id}>
                         <button type="button" onClick={() => selectResource(resource)}>
-                          {resource.type === "note" ? <FileText size={22} /> : resource.type === "link" ? <Link2 size={22} /> : <Image size={22} />}
+                          {resource.type === "note" ? <FileText size={22} /> : resource.type === "link" ? <Link2 size={22} /> : resource.type === "test" ? <CheckSquare size={22} /> : <Image size={22} />}
                           <span>
                             <strong>{resource.title}</strong>
                             <small>
                               {resource.type === "link"
                                 ? resource.url || "No URL added"
+                                : resource.type === "test"
+                                  ? `${resource.dueDate || "No due date"} · ${resource.questions?.length ?? 0} questions`
                                 : resource.type === "picture"
                                   ? resource.description || "No description yet"
                                   : resource.body || "No note content yet"}
@@ -5392,6 +6450,45 @@ function SubjectClassWorkPage({
             )}
           </div>
         </section>
+        </div>
+      ) : null}
+      {previewTest ? (
+        <div className="modal-backdrop test-preview-backdrop" role="presentation">
+          <section className="staff-modal wide-staff-modal test-preview-modal" role="dialog" aria-modal="true" aria-labelledby="test-preview-title">
+            <div className="staff-modal-header">
+              <div>
+                <p className="eyebrow">Test preview</p>
+                <h2 id="test-preview-title">{previewTest.title}</h2>
+              </div>
+            </div>
+            <div className="staff-modal-body">
+              <TestResourceView
+                test={{ ...previewTest, testSubmissions: [previewSubmission] }}
+                scale={assessmentScales.find((scale) => scale.id === previewTest.scaleId)}
+                accessLevel="student"
+                activeStudentId="preview"
+                onSubmissionChange={(submission) => {
+                  setPreviewSubmission(submission);
+                  const liveTest = resources.find((resource) => resource.id === previewTest.id) ?? previewTest;
+                  const submissions = liveTest.testSubmissions ?? [];
+                  const nextTest = {
+                    ...liveTest,
+                    testSubmissions: [
+                      ...submissions.filter((item) => item.studentId !== submission.studentId),
+                      submission,
+                    ],
+                  };
+                  setPreviewTest(nextTest);
+                  autoSaveResource(previewTest.id, { testSubmissions: nextTest.testSubmissions });
+                }}
+              />
+            </div>
+            <div className="staff-modal-actions">
+              <button className="secondary-action" type="button" onClick={() => setPreviewTest(null)}>
+                Close preview
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
     </div>
@@ -5433,7 +6530,16 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
   const simulateRole = params.get("simulateRole");
   const simulateId = params.get("simulateId");
   const subjectClasses = school.subjectClasses ?? [];
-  const canSimulate = !hasFirebaseConfig || canManageSchool(profile, school.id, userEmail, school);
+  const isDemoSchool = school.id === sampleSchool.id;
+  const canSimulate = !hasFirebaseConfig || isDemoSchool || canManageSchool(profile, school.id, userEmail, school);
+
+  if (canSimulate && simulateRole === "admin") {
+    return {
+      role: "admin",
+      label: "School admin",
+      subjectClasses,
+    };
+  }
 
   if (canSimulate && simulateRole === "staff" && simulateId) {
     const staffMember = school.staff.find((member) => member.email?.toLowerCase() === simulateId.toLowerCase());
@@ -5459,6 +6565,14 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
         subjectClasses: subjectClasses.filter((subjectClass) => subjectClass.studentIds.includes(student.id)),
       };
     }
+  }
+
+  if (isDemoSchool && !simulateRole) {
+    return {
+      role: "admin",
+      label: "School admin",
+      subjectClasses,
+    };
   }
 
   if (profile?.superAdmin) {
@@ -5502,12 +6616,70 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
 function getEffectiveAssessmentScales(school: School, globalSchoolWork: GlobalSchoolWorkConfig) {
   const settings = school.schoolWorkSettings ?? {
     enabledGlobalAssessmentScaleIds: globalSchoolWork.assessmentScales.map((scale) => scale.id),
+    knownGlobalAssessmentScaleIds: globalSchoolWork.assessmentScales.map((scale) => scale.id),
+    allowStudentMessaging: false,
     customAssessmentScales: [],
   };
   return [
     ...globalSchoolWork.assessmentScales.filter((scale) => settings.enabledGlobalAssessmentScaleIds.includes(scale.id)),
     ...settings.customAssessmentScales,
   ];
+}
+
+function getCurrentChatParticipant(school: School, identity: SchoolWorkIdentity): ChatParticipant {
+  if (identity.role === "student") {
+    const student = school.students.find((item) => item.id === identity.studentId);
+    return {
+      id: `student:${identity.studentId}`,
+      name: student ? `${student.firstName} ${student.lastName}` : identity.label,
+      role: "student",
+    };
+  }
+  if (identity.role === "admin") {
+    return { id: `admin:${school.id}`, name: identity.label || "School admin", role: "admin" };
+  }
+  const staffMember = school.staff.find((member) => member.name === identity.label);
+  return {
+    id: `staff:${staffMember?.email || identity.label}`,
+    name: staffMember?.name || identity.label,
+    role: identity.role === "teacher" ? "teacher" : "staff",
+  };
+}
+
+function getSchoolChatParticipants(school: School): ChatParticipant[] {
+  return [
+    { id: `admin:${school.id}`, name: "School admin", role: "admin" },
+    ...school.staff.map((member) => ({
+      id: `staff:${member.email || member.name}`,
+      name: member.name,
+      role: hasStaffCategory(member, "Teacher") ? "teacher" as const : "staff" as const,
+    })),
+    ...school.students.map((student) => ({
+      id: `student:${student.id}`,
+      name: `${student.firstName} ${student.lastName}`,
+      role: "student" as const,
+    })),
+  ];
+}
+
+function canMessageParticipant(currentUser: ChatParticipant, recipient: ChatParticipant, allowStudentMessaging: boolean) {
+  if (currentUser.id === recipient.id) {
+    return false;
+  }
+  if (currentUser.role === "student" && recipient.role === "student") {
+    return allowStudentMessaging;
+  }
+  return true;
+}
+
+function getTestTimerLabel(test: SubjectResource) {
+  if (test.timerMode === "duration") {
+    return `${test.timerMinutes ?? 45} minutes from start`;
+  }
+  if (test.timerMode === "fixed-end") {
+    return test.timerEndsAt ? `Until ${test.timerEndsAt}` : "Fixed end time not set";
+  }
+  return "No timer";
 }
 
 function formatAssessmentScaleSummary(scale: AssessmentScale) {
@@ -5751,6 +6923,15 @@ function TextInput({ label, value, onChange, icon }: { label: string; value: str
   );
 }
 
+function DateInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="field-label">
+      {label}
+      <input type="date" value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
 function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="field-label">
@@ -5891,9 +7072,6 @@ function RegistrationModal({
             <p className="eyebrow">{eyebrow}</p>
             <h2 id="staff-modal-title">{title}</h2>
           </div>
-          <button className="secondary-action" type="button" onClick={onClose}>
-            Close
-          </button>
         </div>
         <div className="staff-modal-body">
           {children}

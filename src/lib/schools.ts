@@ -273,6 +273,14 @@ export function slugifySchoolName(name: string): string {
 }
 
 function normalizeSchool(school: School): School {
+  const defaultGlobalScaleIds = defaultGlobalSchoolWorkConfig.assessmentScales.map((scale) => scale.id);
+  const knownGlobalScaleIds = school.schoolWorkSettings?.knownGlobalAssessmentScaleIds ?? defaultGlobalScaleIds;
+  const newlyAddedGlobalScaleIds = defaultGlobalScaleIds.filter((id) => !knownGlobalScaleIds.includes(id));
+  const enabledGlobalAssessmentScaleIds = mergeUnique([
+    ...(school.schoolWorkSettings?.enabledGlobalAssessmentScaleIds ?? defaultGlobalScaleIds),
+    ...newlyAddedGlobalScaleIds,
+  ]).filter((id) => defaultGlobalScaleIds.includes(id));
+
   return {
     ...sampleSchool,
     ...school,
@@ -342,7 +350,9 @@ function normalizeSchool(school: School): School {
     aboutCategories: school.aboutCategories ?? [],
     aboutPages: school.aboutPages ?? [],
     schoolWorkSettings: {
-      enabledGlobalAssessmentScaleIds: school.schoolWorkSettings?.enabledGlobalAssessmentScaleIds ?? defaultGlobalSchoolWorkConfig.assessmentScales.map((scale) => scale.id),
+      enabledGlobalAssessmentScaleIds,
+      knownGlobalAssessmentScaleIds: defaultGlobalScaleIds,
+      allowStudentMessaging: school.schoolWorkSettings?.allowStudentMessaging ?? false,
       customAssessmentScales: (school.schoolWorkSettings?.customAssessmentScales ?? []).map((scale, scaleIndex) => ({
         id: scale.id || `school-scale-${scaleIndex + 1}`,
         name: scale.name || "Assessment scale",
@@ -354,6 +364,7 @@ function normalizeSchool(school: School): School {
         }))),
       })),
     },
+    chatMessages: school.chatMessages ?? [],
   };
 }
 
@@ -380,6 +391,10 @@ function normalizeGradeLevels(school: School) {
 function getGradeLevelIdForGrade(grade?: string) {
   const normalizedGrade = grade?.trim() || "grade";
   return `grade-${normalizedGrade.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${new Date().getFullYear()}`;
+}
+
+function mergeUnique<T>(items: T[]): T[] {
+  return Array.from(new Set(items));
 }
 
 function getAdminEmailProfileId(email: string) {

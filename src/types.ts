@@ -124,7 +124,9 @@ export type AssessmentScale = {
 
 export type SchoolWorkSettings = {
   enabledGlobalAssessmentScaleIds: string[];
+  knownGlobalAssessmentScaleIds?: string[];
   customAssessmentScales: AssessmentScale[];
+  allowStudentMessaging?: boolean;
 };
 
 export type LoginSettings = {
@@ -163,14 +165,55 @@ export type ResourceFolder = {
 
 export type SubjectResource = {
   id: string;
-  type: "note" | "link" | "picture";
+  type: "note" | "link" | "picture" | "test";
   title: string;
   folderId?: string;
   body?: string;
   url?: string;
   imageDataUrl?: string;
   description?: string;
+  dueDate?: string;
+  scaleId?: string;
+  gradingMode?: "auto" | "manual";
+  publishResults?: "immediately" | "after-review";
+  lobbyEnabled?: boolean;
+  startsAt?: string;
+  timerMode?: "none" | "duration" | "fixed-end";
+  timerMinutes?: number;
+  timerEndsAt?: string;
+  autoSubmitOnTimerEnd?: boolean;
+  questions?: TestQuestion[];
+  testSubmissions?: TestSubmission[];
   createdAt: string;
+};
+
+export type TestQuestion = {
+  id: string;
+  type: "multiple-choice" | "text";
+  prompt: string;
+  marks?: number;
+  allowMultipleCorrect?: boolean;
+  options?: TestQuestionOption[];
+};
+
+export type TestQuestionOption = {
+  id: string;
+  text: string;
+  correct?: boolean;
+};
+
+export type TestSubmission = {
+  studentId: string;
+  answers: Record<string, string | string[]>;
+  startedAt?: string;
+  submittedAt?: string;
+  lastSavedAt?: string;
+  autoSubmitted?: boolean;
+  reviewed?: boolean;
+  score?: number;
+  maxScore?: number;
+  percentage?: number;
+  levelId?: string;
 };
 
 export type SubjectClassAnnouncement = {
@@ -223,9 +266,20 @@ export type School = {
   subjects: Subject[];
   subjectClasses?: SubjectClass[];
   schoolWorkSettings?: SchoolWorkSettings;
+  chatMessages?: SchoolChatMessage[];
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
   updatedAt?: string;
+};
+
+export type SchoolChatMessage = {
+  id: string;
+  fromId: string;
+  fromName: string;
+  toId: string;
+  toName: string;
+  body: string;
+  createdAt: string;
 };
 
 export type GlobalAboutPage = AboutPage & {
