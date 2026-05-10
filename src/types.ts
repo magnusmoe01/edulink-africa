@@ -210,10 +210,20 @@ export type TestSubmission = {
   lastSavedAt?: string;
   autoSubmitted?: boolean;
   reviewed?: boolean;
+  lockedAt?: string;
+  lockedReason?: "page-hidden" | "window-blur" | "fullscreen-exit" | "cursor-left-page" | "cursor-entered-page";
+  unlockedAt?: string;
   score?: number;
   maxScore?: number;
   percentage?: number;
   levelId?: string;
+  proctorEvents?: TestProctorEvent[];
+};
+
+export type TestProctorEvent = {
+  id: string;
+  type: "page-hidden" | "window-blur" | "fullscreen-exit" | "cursor-left-page" | "cursor-entered-page";
+  at: string;
 };
 
 export type SubjectClassAnnouncement = {
@@ -267,8 +277,20 @@ export type School = {
   subjectClasses?: SubjectClass[];
   schoolWorkSettings?: SchoolWorkSettings;
   chatMessages?: SchoolChatMessage[];
+  supportTickets?: SupportTicket[];
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
+  updatedAt?: string;
+};
+
+export type SupportTicket = {
+  id: string;
+  subject: string;
+  message: string;
+  status: "open" | "in-progress" | "resolved";
+  createdAt: string;
+  createdBy?: string;
+  response?: string;
   updatedAt?: string;
 };
 

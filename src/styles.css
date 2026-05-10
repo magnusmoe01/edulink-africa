@@ -999,6 +999,20 @@ textarea {
   text-underline-offset: 4px;
 }
 
+.school-nav a.school-lms-login-button {
+  border: 1px solid var(--school-main);
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #fff;
+  background: var(--school-main);
+  text-decoration: none;
+}
+
+.school-nav a.school-lms-login-button:hover {
+  background: color-mix(in srgb, var(--school-main) 88%, #000);
+  text-decoration: none;
+}
+
 .school-header-session {
   display: inline-flex;
   align-items: center;
@@ -1061,8 +1075,10 @@ textarea {
 
 .chat-popup {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
   width: min(100%, 900px);
+  height: min(760px, 92vh);
   max-height: min(760px, 92vh);
   overflow: hidden;
   border-radius: 8px;
@@ -1087,7 +1103,7 @@ textarea {
 .chat-popup-layout {
   display: grid;
   grid-template-columns: minmax(180px, 250px) minmax(0, 1fr);
-  min-height: 480px;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #d8e0dc;
   border-radius: 8px;
@@ -1120,14 +1136,26 @@ textarea {
   background: #fff;
 }
 
-.chat-recipient-picker > div {
+.chat-recipient-picker-main {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: start;
+  min-height: 0;
+}
+
+.chat-recipient-picker-list {
   display: grid;
   gap: 4px;
   max-height: 220px;
   overflow: auto;
 }
 
-.chat-recipient-list button {
+.chat-recipient-picker-main .chat-recipient-picker-list {
+  max-height: none;
+  min-height: 0;
+}
+
+.chat-recipient-list button,
+.chat-recipient-picker-list button {
   display: grid;
   gap: 3px;
   border: 0;
@@ -1138,12 +1166,32 @@ textarea {
   text-align: left;
 }
 
+.chat-recipient-picker-list button.chat-recipient-picker-option {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+}
+
+.chat-recipient-picker-option strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-recipient-picker-option span {
+  justify-self: end;
+}
+
 .chat-recipient-list button:hover,
-.chat-recipient-list button.active-chat-recipient {
+.chat-recipient-list button.active-chat-recipient,
+.chat-recipient-picker-list button:hover {
   background: #e5eee9;
 }
 
 .chat-recipient-list span,
+.chat-recipient-picker span,
 .chat-thread-heading span,
 .chat-message time {
   color: #5d6862;
@@ -1747,9 +1795,42 @@ textarea {
   align-items: start;
 }
 
+.admin-layout-sidebar-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
 .admin-sidebar {
   display: grid;
   gap: 18px;
+  color: #fff;
+}
+
+.admin-sidebar-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-sidebar-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.admin-sidebar-toggle:hover {
+  border-color: #e3b54f;
+  background: rgba(227, 181, 79, 0.2);
+}
+
+.admin-superadmin-shortcut {
+  min-height: 40px;
+  border-color: rgba(255, 255, 255, 0.28);
   color: #fff;
 }
 
@@ -1766,6 +1847,13 @@ textarea {
   padding: 24px;
   color: #fff;
   background: #18322e;
+}
+
+.admin-left-rail-collapsed {
+  justify-items: center;
+  grid-template-rows: auto;
+  padding: 18px 10px;
+  overflow: visible;
 }
 
 .admin-sidebar h1 {
@@ -1980,6 +2068,53 @@ textarea {
   width: auto;
 }
 
+.support-ticket-list {
+  display: grid;
+  gap: 14px;
+}
+
+.support-ticket-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f9fbfa;
+}
+
+.support-ticket-heading,
+.support-ticket-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.support-ticket-heading h3,
+.support-ticket-card p {
+  margin: 0;
+}
+
+.support-ticket-heading span,
+.support-ticket-card p {
+  color: #5d6862;
+  line-height: 1.5;
+}
+
+.support-ticket-status {
+  width: min(100%, 190px);
+}
+
+.support-ticket-response {
+  border-left: 3px solid #d7a63c;
+  padding-left: 12px;
+}
+
+.support-ticket-actions {
+  justify-content: flex-end;
+}
+
 .superadmin-main {
   display: grid;
   gap: 22px;
@@ -2089,6 +2224,10 @@ textarea {
 .simulation-toolbar p {
   margin: 4px 0 0;
   color: #5d6862;
+}
+
+.superadmin-main-search {
+  width: min(100%, 320px);
 }
 
 .editor-grid {
@@ -2429,6 +2568,61 @@ textarea {
   width: 150px;
 }
 
+.student-table th:last-child,
+.student-table td:last-child {
+  width: 390px;
+}
+
+.student-table .table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.student-table-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.student-table-filter-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.student-table-filter-row .field-label {
+  width: min(100%, 280px);
+}
+
+.student-table-filter-row span {
+  color: #5d6862;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.student-info-modal-body,
+.student-info-list {
+  display: grid;
+  gap: 12px;
+}
+
+.student-info-photo {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #e3ece7;
+}
+
+.student-info-list p {
+  margin: 0;
+  color: #33403b;
+  line-height: 1.45;
+}
+
 .calendar-table th,
 .calendar-table td {
   padding-top: 9px;
@@ -2457,6 +2651,35 @@ textarea {
   text-decoration: underline;
 }
 
+.access-overview {
+  display: grid;
+  gap: 18px;
+}
+
+.access-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.access-summary-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f9fbfa;
+}
+
+.access-summary-card span {
+  color: #5d6862;
+  line-height: 1.45;
+}
+
+.access-table {
+  min-width: 900px;
+}
+
 .table-color-swatch {
   display: inline-block;
   width: 16px;
@@ -2473,13 +2696,13 @@ textarea {
 
 .subject-work-nav {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) 0;
   align-items: center;
-  gap: 18px;
-  padding: 0 18px;
+  gap: 0;
   border: 1px solid #d8e0dc;
   border-radius: 8px;
   background: #f9fbfa;
+  overflow: hidden;
 }
 
 .subject-work-nav-title {
@@ -2487,13 +2710,17 @@ textarea {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  overflow: hidden;
+  padding: 0 18px;
 }
 
 .subject-work-nav-tabs {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 32px;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .subject-work-nav-spacer {
@@ -2514,8 +2741,11 @@ textarea {
 }
 
 .subject-work-nav strong {
+  min-width: 0;
+  overflow: hidden;
   color: #16201d;
   font-size: 1.08rem;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -2531,6 +2761,39 @@ textarea {
 
 .subject-work-nav button:hover,
 .subject-work-nav button.active-subject-work-tab {
+  color: #16201d;
+  border-bottom-color: #d7a63c;
+}
+
+.school-work-overview {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 16px;
+}
+
+.school-work-overview-menu {
+  display: inline-flex;
+  justify-self: start;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+}
+
+.school-work-overview-menu button {
+  min-height: 44px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 0 10px;
+  color: #5d6862;
+  background: transparent;
+  font-weight: 800;
+}
+
+.school-work-overview-menu button:hover,
+.school-work-overview-menu button.active-school-work-overview-menu-item {
   color: #16201d;
   border-bottom-color: #d7a63c;
 }
@@ -2567,6 +2830,10 @@ textarea {
   background:
     linear-gradient(rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.68)),
     var(--subject-card-color, #1f6857);
+}
+
+.school-work-contact-teacher-card {
+  --subject-card-color: #5d6b7a;
 }
 
 .school-work-card strong {
@@ -2933,13 +3200,76 @@ textarea {
   gap: 16px;
 }
 
+.test-proctor-alerts,
+.test-submission-alerts {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dc9b35;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff8eb;
+  color: #4b3520;
+}
+
+.test-proctor-alerts h3,
+.test-proctor-alerts p,
+.test-submission-alerts p {
+  margin: 0;
+}
+
+.test-proctor-alerts p {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .test-question-actions,
-.test-question-heading {
+.test-question-heading,
+.test-result-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.test-result-actions {
+  justify-content: flex-end;
+}
+
+.test-result-row-summary,
+.test-result-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.test-result-row-summary {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.test-result-row-summary h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.test-integrity-icon {
+  flex: 0 0 auto;
+  color: #b45309;
+}
+
+.test-integrity-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid #dc9b35;
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: #fff8eb;
+  color: #4b3520;
+  font-size: 0.88rem;
+  font-weight: 800;
 }
 
 .test-question-actions h3,
@@ -2987,11 +3317,37 @@ textarea {
   color: #5d6862;
 }
 
+@media (max-width: 720px) {
+  .test-result-row-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .test-result-actions {
+    justify-content: flex-start;
+  }
+}
+
 .school-work-settings-panel,
 .settings-scale-section,
 .settings-scale-list {
   display: grid;
   gap: 16px;
+}
+
+.school-work-section-menu {
+  display: grid;
+  gap: 20px;
+}
+
+.school-work-section-menu h3,
+.school-work-section-menu p {
+  margin: 0;
+}
+
+.school-work-section-menu p {
+  max-width: 680px;
+  color: #5d6862;
+  line-height: 1.55;
 }
 
 .settings-scale-section h4,
@@ -3204,6 +3560,19 @@ textarea {
   text-decoration: underline;
 }
 
+.gradebook-student-button {
+  border: 0;
+  padding: 0;
+  color: #16201d;
+  text-align: left;
+  background: transparent;
+}
+
+.gradebook-student-button:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .gradebook-assessment-button span {
   color: #66736d;
   font-size: 0.76rem;
@@ -3234,6 +3603,8 @@ textarea {
 }
 
 .student-assessment-grade-heading h3,
+.student-assessment-grade-heading p,
+.student-assessment-grade-heading time,
 .student-assessment-feedback p {
   margin: 0;
 }
@@ -3243,19 +3614,13 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.student-assessment-grade-heading strong {
-  justify-self: stretch;
-  border-radius: 999px;
-  padding: 6px 12px;
-  color: #1f5b46;
+.student-assessment-grade-heading p {
+  justify-self: center;
   text-align: center;
-  background: #dff2e8;
 }
 
 .student-assessment-grade-heading time {
   justify-self: end;
-  color: #5d6862;
-  font-weight: 800;
 }
 
 .student-assessment-feedback {
@@ -3268,6 +3633,12 @@ textarea {
 .student-assessment-feedback p {
   color: #33403b;
   line-height: 1.55;
+}
+
+.student-assessment-grade-heading time {
+  color: #33403b;
+  font-size: 1rem;
+  font-weight: 400;
 }
 
 .school-work-detail-shell {
@@ -3425,6 +3796,11 @@ textarea {
   color: #1f3d36;
 }
 
+.resource-tree-add-resource.active-resource-tree-add-resource {
+  color: #16201d;
+  font-weight: 800;
+}
+
 .resource-tree-add-resource svg {
   width: 13px;
   height: 13px;
@@ -3473,11 +3849,6 @@ textarea {
   color: #1f6857;
   background: transparent;
   font-weight: 800;
-}
-
-.resource-one-level-up small {
-  color: #66736d;
-  font-weight: 700;
 }
 
 .resource-one-level-up:hover span {
@@ -3780,7 +4151,7 @@ textarea {
 }
 
 .school-loading-section {
-  min-height: 54vh;
+  min-height: calc(100vh - 170px);
   display: grid;
   place-items: center;
   padding: 70px clamp(18px, 5vw, 72px);
@@ -3836,6 +4207,28 @@ textarea {
     position: static;
     max-height: none;
     min-height: 0;
+  }
+
+  .admin-layout-sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-left-rail-collapsed {
+    justify-items: start;
+    padding: 12px 24px;
+  }
+
+  .subject-work-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .subject-work-nav-title,
+  .subject-work-nav-tabs {
+    padding: 0 18px;
+  }
+
+  .subject-work-nav-spacer {
+    display: none;
   }
 
   .resource-workspace {

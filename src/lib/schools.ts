@@ -365,6 +365,7 @@ function normalizeSchool(school: School): School {
       })),
     },
     chatMessages: school.chatMessages ?? [],
+    supportTickets: school.supportTickets ?? [],
   };
 }
 

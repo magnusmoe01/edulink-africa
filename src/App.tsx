@@ -24,6 +24,8 @@ import {
   Mail,
   MapPin,
   MessageCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
   Phone,
   Plus,
   Quote,
@@ -31,11 +33,13 @@ import {
   Save,
   School as SchoolIcon,
   ShieldCheck,
+  TriangleAlert,
   Trash2,
   UserRound,
 } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCalendarDays, faClipboardCheck, faRulerCombined, faUser } from "@fortawesome/free-solid-svg-icons";
+import { SchoolChatPopup } from "./components/SchoolChatPopup";
 import { sampleSchool } from "./data/sampleSchool";
 import {
   defaultGlobalAboutConfig,
@@ -55,9 +59,9 @@ import {
 } from "./lib/schools";
 import { hasFirebaseConfig } from "./lib/firebase";
 import { auth } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource, SupportTicket } from "./types";
 
-type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings" | "loginSettings";
+type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings" | "loginSettings";
 type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork" | "settings";
 
 const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
@@ -105,6 +109,7 @@ const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "news", label: "News" },
   { id: "calendar", label: "Calendar" },
   { id: "staff", label: "Staff" },
+  { id: "access", label: "Access" },
   { id: "grades", label: "Grades and years" },
   { id: "classes", label: "Classes" },
   { id: "subjectClasses", label: "Subject classes" },
@@ -130,8 +135,8 @@ const editorCategories: Array<{
   {
     id: "people",
     label: "People",
-    description: "Staff members, students, guardians, and learner records.",
-    sections: ["staff", "students"],
+    description: "Staff members, students, access rights, guardians, and learner records.",
+    sections: ["staff", "students", "access"],
   },
   {
     id: "academics",
@@ -1210,6 +1215,8 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
             subjects={school.subjects}
             classes={school.classes}
             students={school.students}
+            role={identity.role === "admin" ? "admin" : identity.role === "teacher" ? "teacher" : identity.role === "viewer" ? "viewer" : "student"}
+            participantLabel={identity.label}
             onOpen={setActiveSubjectClassId}
           />
         )}
@@ -1417,12 +1424,18 @@ function AdminPage({ schoolId }: { schoolId: string }) {
   const [school, setSchool] = useState<School>(() => getLocalSchool(schoolId) ?? { ...sampleSchool, id: schoolId });
   const [activeCategory, setActiveCategory] = useState<EditorCategory>(() => getEditorStateFromHash().category);
   const [activeSection, setActiveSection] = useState<EditorSection | null>(() => getEditorStateFromHash().section);
+  const [adminSidebarOpen, setAdminSidebarOpen] = useState(() => {
+    const initialEditorState = getEditorStateFromHash();
+    return initialEditorState.category !== "schoolWork" && initialEditorState.section !== "schoolWork";
+  });
   const [adminUser, setAdminUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
   const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [draftSupportTicket, setDraftSupportTicket] = useState<Pick<SupportTicket, "subject" | "message">>({ subject: "", message: "" });
 
   useEffect(() => {
     void Promise.all([getSchool(schoolId), getGlobalAboutConfig(), getGlobalSchoolWorkConfig()]).then(([remoteSchool, nextGlobalAbout, nextGlobalSchoolWork]) => {
@@ -1441,6 +1454,17 @@ function AdminPage({ schoolId }: { schoolId: string }) {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  const isSchoolWorkAdminView = activeCategory === "schoolWork" || activeSection === "schoolWork";
+  const previousSchoolWorkAdminView = useRef(isSchoolWorkAdminView);
+
+  useEffect(() => {
+    if (previousSchoolWorkAdminView.current === isSchoolWorkAdminView) {
+      return;
+    }
+    previousSchoolWorkAdminView.current = isSchoolWorkAdminView;
+    setAdminSidebarOpen(!isSchoolWorkAdminView);
+  }, [isSchoolWorkAdminView]);
 
   useEffect(() => {
     if (!hasFirebaseConfig || !auth) {
@@ -1482,6 +1506,27 @@ function AdminPage({ schoolId }: { schoolId: string }) {
   };
   const saveNextChatMessages = async (nextMessages: SchoolChatMessage[]) => {
     await saveNextSchool({ ...school, chatMessages: nextMessages });
+  };
+  const submitSupportTicket = async () => {
+    const subject = draftSupportTicket.subject.trim();
+    const message = draftSupportTicket.message.trim();
+    if (!subject || !message) {
+      setSaveStatus("Add a support subject and message");
+      return;
+    }
+    const ticket: SupportTicket = {
+      id: `support-${Date.now()}`,
+      subject,
+      message,
+      status: "open",
+      createdAt: new Date().toISOString(),
+      createdBy: adminUser?.email ?? profile?.email ?? "School admin",
+    };
+    await saveNextSchool({ ...school, supportTickets: [ticket, ...(school.supportTickets ?? [])] });
+    setDraftSupportTicket({ subject: "", message: "" });
+    setSupportOpen(false);
+    setSaveStatus("Support ticket sent");
+    setTimeout(() => setSaveStatus(null), 2000);
   };
 
   const logout = async () => {
@@ -1526,6 +1571,9 @@ function AdminPage({ schoolId }: { schoolId: string }) {
           <button className="secondary-action" onClick={() => openInNewTab(`/${school.id}`)}>
             View page
           </button>
+          <button className="secondary-action" onClick={() => setSupportOpen(true)}>
+            Support
+          </button>
           {!adminUser ? (
             <button className="secondary-action" onClick={() => navigate("/login")}>
               Login
@@ -1548,22 +1596,74 @@ function AdminPage({ schoolId }: { schoolId: string }) {
           onMessagesChange={(messages) => void saveNextChatMessages(messages)}
         />
       ) : null}
+      {supportOpen ? (
+        <RegistrationModal
+          title="Raise support ticket"
+          eyebrow="Support"
+          submitLabel="Send ticket"
+          onClose={() => setSupportOpen(false)}
+          onSubmit={() => void submitSupportTicket()}
+        >
+          <TextInput
+            label="Subject"
+            value={draftSupportTicket.subject}
+            onChange={(subject) => setDraftSupportTicket((current) => ({ ...current, subject }))}
+          />
+          <TextArea
+            label="Message"
+            value={draftSupportTicket.message}
+            onChange={(message) => setDraftSupportTicket((current) => ({ ...current, message }))}
+          />
+        </RegistrationModal>
+      ) : null}
 
-      <section className="admin-layout">
-        <aside className="admin-left-rail">
-          <div className="admin-sidebar">
-            <h1>{school.name}</h1>
-            <div className="status-box">
-              <span>Signed in</span>
-              <strong>{adminUser?.email ?? "Not signed in"}</strong>
-            </div>
-            {profile?.superAdmin ? (
-              <button className="secondary-action admin-wide-button" onClick={() => navigate("/superadmin")}>
-                Superadmin dashboard
-              </button>
-            ) : null}
-          </div>
-          <EditorMenu activeCategory={activeCategory} activeSection={activeSection} onChange={openEditorCategory} />
+      <section className={`admin-layout ${isSchoolWorkAdminView && !adminSidebarOpen ? "admin-layout-sidebar-collapsed" : ""}`}>
+        <aside className={`admin-left-rail ${isSchoolWorkAdminView && !adminSidebarOpen ? "admin-left-rail-collapsed" : ""}`}>
+          {isSchoolWorkAdminView && !adminSidebarOpen ? (
+            <button
+              className="admin-sidebar-toggle"
+              type="button"
+              onClick={() => setAdminSidebarOpen(true)}
+              aria-label="Open admin sidebar"
+              title="Open admin sidebar"
+            >
+              <PanelLeftOpen size={20} />
+            </button>
+          ) : (
+            <>
+              <div className="admin-sidebar">
+                {isSchoolWorkAdminView ? (
+                  <div className="admin-sidebar-action-row">
+                    {profile?.superAdmin ? (
+                      <button className="secondary-action admin-superadmin-shortcut" onClick={() => navigate("/superadmin")}>
+                        Superadmin dashboard
+                      </button>
+                    ) : null}
+                    <button
+                      className="admin-sidebar-toggle"
+                      type="button"
+                      onClick={() => setAdminSidebarOpen(false)}
+                      aria-label="Collapse admin sidebar"
+                      title="Collapse admin sidebar"
+                    >
+                      <PanelLeftClose size={20} />
+                    </button>
+                  </div>
+                ) : null}
+                <h1>{school.name}</h1>
+                <div className="status-box">
+                  <span>Signed in</span>
+                  <strong>{adminUser?.email ?? "Not signed in"}</strong>
+                </div>
+                {profile?.superAdmin && !isSchoolWorkAdminView ? (
+                  <button className="secondary-action admin-wide-button" onClick={() => navigate("/superadmin")}>
+                    Superadmin dashboard
+                  </button>
+                ) : null}
+              </div>
+              <EditorMenu activeCategory={activeCategory} activeSection={activeSection} onChange={openEditorCategory} />
+            </>
+          )}
         </aside>
 
         <SchoolEditor
@@ -1593,9 +1693,8 @@ function SuperAdminPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
   const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
-  const [superAdminView, setSuperAdminView] = useState<"schools" | "globalPages" | "schoolWorkSettings" | "superAdmins">("schools");
+  const [superAdminView, setSuperAdminView] = useState<"schools" | "supportTickets" | "globalPages" | "schoolWorkSettings" | "superAdmins">("schools");
   const [query, setQuery] = useState("");
-  const [newSchoolName, setNewSchoolName] = useState("");
   const [newSuperAdminEmail, setNewSuperAdminEmail] = useState("");
   const [status, setStatus] = useState("Loading...");
 
@@ -1633,34 +1732,7 @@ function SuperAdminPage() {
     const haystack = `${school.name} ${school.id} ${school.city} ${school.country}`.toLowerCase();
     return haystack.includes(query.toLowerCase());
   });
-
-  const createSchool = async () => {
-    const id = slugifySchoolName(newSchoolName);
-    if (!id) {
-      setStatus("Enter a school name before creating");
-      return;
-    }
-    const nextSchool: School = {
-      ...sampleSchool,
-      id,
-      name: newSchoolName,
-      email: `office@${id}.example`,
-      adminEmails: [],
-      showWebsite: true,
-      gradeLevels: [],
-      classes: [],
-      students: [],
-      subjects: [],
-      subjectClasses: [],
-      aboutCategories: [],
-      aboutPages: [],
-      updatedAt: new Date().toISOString(),
-    };
-    setStatus("Creating school...");
-    await saveSchool(nextSchool);
-    setNewSchoolName("");
-    await refreshSchools(setSchools, setStatus);
-  };
+  const supportTicketCount = schools.reduce((total, school) => total + (school.supportTickets ?? []).length, 0);
 
   const removeSchool = async (school: School) => {
   if (hasFirebaseConfig && !profile?.superAdmin) {
@@ -1725,6 +1797,28 @@ function SuperAdminPage() {
       setStatus(error instanceof Error ? error.message : "Could not add superadmin");
     }
   };
+  const updateSupportTicket = async (schoolId: string, ticketId: string, patch: Partial<SupportTicket>) => {
+    if (hasFirebaseConfig && !profile?.superAdmin) {
+      setStatus("Only superadmins can update support tickets");
+      return;
+    }
+    const school = schools.find((item) => item.id === schoolId);
+    if (!school) {
+      setStatus("School not found");
+      return;
+    }
+    const nextSchool = {
+      ...school,
+      supportTickets: (school.supportTickets ?? []).map((ticket) => ticket.id === ticketId ? {
+        ...ticket,
+        ...patch,
+        updatedAt: new Date().toISOString(),
+      } : ticket),
+    };
+    setStatus("Updating support ticket...");
+    await saveSchool(nextSchool);
+    await refreshSchools(setSchools, setStatus);
+  };
 
   const logout = async () => {
     if (auth) {
@@ -1781,6 +1875,14 @@ function SuperAdminPage() {
               All schools
             </button>
             <button
+              className={superAdminView === "supportTickets" ? "active-superadmin-nav" : ""}
+              type="button"
+              onClick={() => setSuperAdminView("supportTickets")}
+            >
+              <MessageCircle size={18} />
+              Support tickets ({supportTicketCount})
+            </button>
+            <button
               className={superAdminView === "globalPages" ? "active-superadmin-nav" : ""}
               type="button"
               onClick={() => setSuperAdminView("globalPages")}
@@ -1805,23 +1907,6 @@ function SuperAdminPage() {
               Superadmins
             </button>
           </nav>
-          {superAdminView === "schools" ? (
-            <>
-              <label className="field-label search-field">
-                Search schools
-                <span className="input-shell">
-                  <Search size={18} />
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} />
-                </span>
-              </label>
-              <div className="create-school-box">
-                <TextInput label="Create school" value={newSchoolName} onChange={setNewSchoolName} />
-                <button className="primary-action" type="button" onClick={() => void createSchool()}>
-                  Create
-                </button>
-              </div>
-            </>
-          ) : null}
         </aside>
 
         <section className="superadmin-main">
@@ -1829,6 +1914,8 @@ function SuperAdminPage() {
             <GlobalAboutEditor config={globalAbout} onChange={setGlobalAbout} onSubmit={saveGlobalAbout} />
           ) : superAdminView === "schoolWorkSettings" ? (
             <GlobalSchoolWorkEditor config={globalSchoolWork} onChange={setGlobalSchoolWork} onSubmit={saveGlobalSchoolWork} />
+          ) : superAdminView === "supportTickets" ? (
+            <SupportTicketsPanel schools={schools} onUpdateTicket={(schoolId, ticketId, patch) => void updateSupportTicket(schoolId, ticketId, patch)} />
           ) : superAdminView === "superAdmins" ? (
             <EditorPanel title="Superadmins">
               <div className="panel-heading global-about-heading">
@@ -1851,6 +1938,13 @@ function SuperAdminPage() {
                   <h2>{filteredSchools.length} of {schools.length}</h2>
                   <p>Open a public website or simulate that school's admin dashboard.</p>
                 </div>
+                <label className="field-label superadmin-main-search">
+                  Search schools
+                  <span className="input-shell">
+                    <Search size={18} />
+                    <input value={query} onChange={(event) => setQuery(event.target.value)} />
+                  </span>
+                </label>
               </div>
 
               <section className="school-directory" aria-label="All schools">
@@ -1901,6 +1995,78 @@ function SuperAdminPage() {
         </section>
       </section>
     </main>
+  );
+}
+
+function SupportTicketsPanel({
+  schools,
+  onUpdateTicket,
+}: {
+  schools: School[];
+  onUpdateTicket: (schoolId: string, ticketId: string, patch: Partial<SupportTicket>) => void;
+}) {
+  const tickets = schools
+    .flatMap((school) => (school.supportTickets ?? []).map((ticket) => ({ school, ticket })))
+    .sort((first, second) => new Date(second.ticket.createdAt).getTime() - new Date(first.ticket.createdAt).getTime());
+  const [draftResponses, setDraftResponses] = useState<Record<string, string>>({});
+
+  return (
+    <EditorPanel title="Support tickets">
+      {tickets.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No support tickets</h3>
+          <p>Tickets raised by school admins will appear here.</p>
+        </div>
+      ) : (
+        <div className="support-ticket-list">
+          {tickets.map(({ school, ticket }) => {
+            const draftKey = `${school.id}:${ticket.id}`;
+            const responseDraft = draftResponses[draftKey] ?? ticket.response ?? "";
+            return (
+              <article className="support-ticket-card" key={draftKey}>
+                <div className="support-ticket-heading">
+                  <div>
+                    <p className="eyebrow">{school.name}</p>
+                    <h3>{ticket.subject}</h3>
+                    <span>{ticket.createdBy || "School admin"} · {formatDateTime(ticket.createdAt)}</span>
+                  </div>
+                  <label className="field-label support-ticket-status">
+                    Status
+                    <select
+                      value={ticket.status}
+                      onChange={(event) => onUpdateTicket(school.id, ticket.id, { status: event.target.value as SupportTicket["status"] })}
+                    >
+                      <option value="open">Open</option>
+                      <option value="in-progress">In progress</option>
+                      <option value="resolved">Resolved</option>
+                    </select>
+                  </label>
+                </div>
+                <p>{ticket.message}</p>
+                {ticket.response ? <p className="support-ticket-response"><strong>Response:</strong> {ticket.response}</p> : null}
+                <TextArea
+                  label="Response note"
+                  value={responseDraft}
+                  onChange={(response) => setDraftResponses((current) => ({ ...current, [draftKey]: response }))}
+                />
+                <div className="support-ticket-actions">
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    onClick={() => onUpdateTicket(school.id, ticket.id, { response: responseDraft.trim() || undefined })}
+                  >
+                    Save response
+                  </button>
+                  <button className="secondary-action" type="button" onClick={() => navigate(`/${school.id}/admin`)}>
+                    Open admin
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </EditorPanel>
   );
 }
 
@@ -2754,6 +2920,8 @@ function SchoolEditor({
             subjects={subjects}
             classes={classes}
             students={students}
+            role={canAccessAllSubjectClasses ? "admin" : "teacher"}
+            participantLabel={school.staff.find((member) => member.email?.toLowerCase() === currentUserEmail?.toLowerCase())?.name}
             onOpen={(subjectClassId) => setActiveWorkSubjectClassId(subjectClassId)}
           />
         ) : null}
@@ -3081,6 +3249,19 @@ function SchoolEditor({
                 {renderStaffFields(draftStaff, setDraftStaff)}
               </RegistrationModal>
             ) : null}
+          </EditorPanel>
+        ) : null}
+
+        {activeSection === "access" ? (
+          <EditorPanel title="Access">
+            <AccessOverview
+              school={school}
+              classes={classes}
+              staff={school.staff}
+              students={students}
+              subjectClasses={subjectClasses}
+              subjects={subjects}
+            />
           </EditorPanel>
         ) : null}
 
@@ -3571,6 +3752,7 @@ function getEditorSectionDescription(section: EditorSection) {
     news: "School news articles and announcements.",
     calendar: "Important school dates and events.",
     staff: "Staff profiles, visibility, and contact details.",
+    access: "Overview of users, roles, pages, and SchoolWork access.",
     grades: "Register grade levels and school years.",
     classes: "Main class groups and class teachers.",
     subjectClasses: "Subject class groups with teachers and students.",
@@ -3596,6 +3778,9 @@ function StudentTable({
   onEdit: (student: Student, index: number) => void;
   onRemove: (index: number) => void;
 }) {
+  const [infoStudent, setInfoStudent] = useState<Student | null>(null);
+  const [missingFieldFilter, setMissingFieldFilter] = useState("all");
+
   if (students.length === 0) {
     return (
       <div className="empty-editor-state">
@@ -3613,55 +3798,134 @@ function StudentTable({
     }
     return guardians.map((guardian) => [guardian.name, guardian.relationship].filter(Boolean).join(" - ")).join(", ");
   };
+  const missingFieldOptions = [
+    { value: "all", label: "All students" },
+    { value: "class", label: "Without class" },
+    { value: "email", label: "Without login email" },
+    { value: "photo", label: "Without photo" },
+    { value: "dateOfBirth", label: "Without date of birth" },
+    { value: "gender", label: "Without gender" },
+    { value: "guardians", label: "Without guardians" },
+    { value: "description", label: "Without description" },
+  ];
+  const studentRows = students
+    .map((student, index) => ({ student, index }))
+    .filter(({ student }) => {
+      if (missingFieldFilter === "all") {
+        return true;
+      }
+      if (missingFieldFilter === "class") {
+        return !student.classId || !classes.some((classGroup) => classGroup.id === student.classId);
+      }
+      if (missingFieldFilter === "email") {
+        return !student.email?.trim();
+      }
+      if (missingFieldFilter === "photo") {
+        return !student.photoUrl?.trim();
+      }
+      if (missingFieldFilter === "dateOfBirth") {
+        return !student.dateOfBirth?.trim();
+      }
+      if (missingFieldFilter === "gender") {
+        return !student.gender?.trim();
+      }
+      if (missingFieldFilter === "guardians") {
+        return (student.guardians ?? []).length === 0;
+      }
+      if (missingFieldFilter === "description") {
+        return !student.description?.trim();
+      }
+      return true;
+    });
 
   return (
-    <div className="data-table-wrap">
-      <table className="data-table student-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Class</th>
-            <th>Date of birth</th>
-            <th>Gender</th>
-            <th>Email</th>
-            <th>Guardians</th>
-            <th>Description</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {students.map((student, index) => (
-            <tr key={student.id || `${student.firstName}-${student.lastName}-${index}`}>
-              <td>
-                <strong>{student.firstName} {student.lastName}</strong>
-                {student.photoUrl ? <img className="student-table-photo" src={student.photoUrl} alt="" /> : null}
-                <span>{student.id}</span>
-              </td>
-              <td>{getClassName(student.classId)}</td>
-              <td>{student.dateOfBirth || "Not set"}</td>
-              <td>{student.gender || "Not set"}</td>
-              <td>{student.email || "No login email"}</td>
-              <td>{getGuardianSummary(student)}</td>
-              <td>{student.description || "No description"}</td>
-              <td>
-                <div className="table-actions">
-                  {onSimulate ? (
-                    <button className="secondary-action" type="button" onClick={() => onSimulate(student)}>
-                      Simulate
-                    </button>
-                  ) : null}
-                  <button className="secondary-action" type="button" onClick={() => onEdit(student, index)}>
-                    Edit
-                  </button>
-                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
-                    Remove
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="student-table-panel">
+      <div className="student-table-filter-row">
+        <label className="field-label">
+          Filter
+          <select value={missingFieldFilter} onChange={(event) => setMissingFieldFilter(event.target.value)}>
+            {missingFieldOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <span>{studentRows.length} of {students.length} student{students.length === 1 ? "" : "s"}</span>
+      </div>
+      {studentRows.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No students match this filter</h3>
+          <p>Choose another missing-field filter to see more students.</p>
+        </div>
+      ) : (
+        <div className="data-table-wrap">
+          <table className="data-table student-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Class</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {studentRows.map(({ student, index }) => (
+                <tr key={student.id || `${student.firstName}-${student.lastName}-${index}`}>
+                  <td>
+                    <strong>{student.firstName} {student.lastName}</strong>
+                  </td>
+                  <td>{getClassName(student.classId)}</td>
+                  <td>
+                    <div className="table-actions">
+                      <button className="secondary-action" type="button" onClick={() => setInfoStudent(student)}>
+                        View more info
+                      </button>
+                      {onSimulate ? (
+                        <button className="secondary-action" type="button" onClick={() => onSimulate(student)}>
+                          Simulate
+                        </button>
+                      ) : null}
+                      <button className="secondary-action" type="button" onClick={() => onEdit(student, index)}>
+                        Edit
+                      </button>
+                      <button className="remove-button" type="button" onClick={() => onRemove(index)}>
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {infoStudent ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="staff-modal" role="dialog" aria-modal="true" aria-labelledby="student-info-title">
+            <div className="staff-modal-header">
+              <div>
+                <p className="eyebrow">Student</p>
+                <h2 id="student-info-title">{infoStudent.firstName} {infoStudent.lastName}</h2>
+              </div>
+            </div>
+            <div className="staff-modal-body student-info-modal-body">
+              {infoStudent.photoUrl ? <img className="student-info-photo" src={infoStudent.photoUrl} alt="" /> : null}
+              <div className="student-info-list">
+                <p><strong>Class:</strong> {getClassName(infoStudent.classId)}</p>
+                <p><strong>Date of birth:</strong> {infoStudent.dateOfBirth || "Not set"}</p>
+                <p><strong>Gender:</strong> {infoStudent.gender || "Not set"}</p>
+                <p><strong>Email:</strong> {infoStudent.email || "No login email"}</p>
+                <p><strong>Guardians:</strong> {getGuardianSummary(infoStudent)}</p>
+                <p><strong>Description:</strong> {infoStudent.description || "No description"}</p>
+                <p><strong>Student ID:</strong> {infoStudent.id}</p>
+              </div>
+            </div>
+            <div className="staff-modal-actions">
+              <button className="secondary-action" type="button" onClick={() => setInfoStudent(null)}>
+                Close
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4014,6 +4278,124 @@ function StaffTable({
   );
 }
 
+function AccessOverview({
+  school,
+  classes,
+  staff,
+  students,
+  subjectClasses,
+  subjects,
+}: {
+  school: School;
+  classes: ClassGroup[];
+  staff: StaffMember[];
+  students: Student[];
+  subjectClasses: SubjectClass[];
+  subjects: Subject[];
+}) {
+  const adminEmails = school.adminEmails ?? [];
+  const allowStudentMessaging = Boolean(school.schoolWorkSettings?.allowStudentMessaging);
+  const getSubjectClassLabel = (subjectClass: SubjectClass) => {
+    const subject = subjects.find((item) => item.id === subjectClass.subjectId);
+    return subject?.name ?? subjectClass.name;
+  };
+  const getClassLabel = (classGroup: ClassGroup) => classGroup.grade ? `${classGroup.name} - Grade ${classGroup.grade}` : classGroup.name;
+  const formatList = (items: string[], emptyLabel: string) => items.length ? items.join(", ") : emptyLabel;
+  const staffRows = staff.map((member) => {
+    const categories = getStaffCategories(member);
+    const isTeacher = categories.includes("Teacher");
+    const isAdmin = Boolean(member.email && adminEmails.map((email) => email.toLowerCase()).includes(member.email.toLowerCase()));
+    const taughtSubjectClasses = subjectClasses.filter((subjectClass) => subjectClass.teacherName === member.name).map(getSubjectClassLabel);
+    const contactTeacherClasses = classes.filter((classGroup) => classGroup.teacher === member.name).map(getClassLabel);
+    const access = [
+      isAdmin ? "Admin dashboard" : "",
+      isAdmin ? "All SchoolWork subject classes" : isTeacher ? `Teacher SchoolWork: ${formatList(taughtSubjectClasses, "no assigned subject classes")}` : "SchoolWork viewer access",
+      contactTeacherClasses.length ? `Contact teacher: ${contactTeacherClasses.join(", ")}` : "",
+      "School chat",
+      "Public website pages",
+    ].filter(Boolean);
+    return {
+      id: `staff-${member.email || member.name}`,
+      name: member.name,
+      role: isAdmin ? "School admin" : categories.join(", "),
+      signIn: member.email || "No login email",
+      access,
+    };
+  });
+  const studentRows = students.map((student) => {
+    const studentSubjectClasses = subjectClasses.filter((subjectClass) => subjectClass.studentIds.includes(student.id)).map(getSubjectClassLabel);
+    const classGroup = classes.find((item) => item.id === student.classId);
+    return {
+      id: `student-${student.id}`,
+      name: `${student.firstName} ${student.lastName}`,
+      role: "Student",
+      signIn: student.email || "No login email",
+      access: [
+        `SchoolWork: ${formatList(studentSubjectClasses, "no subject classes")}`,
+        "Grades and feedback",
+        `School chat with teachers/admins${allowStudentMessaging ? " and students" : ""}`,
+        classGroup ? `Main class: ${classGroup.name}` : "No main class",
+      ],
+    };
+  });
+  const staffAdminEmails = new Set(staff.map((member) => member.email?.toLowerCase()).filter(Boolean));
+  const standaloneAdminRows = adminEmails
+    .filter((email) => !staffAdminEmails.has(email.toLowerCase()))
+    .map((email) => ({
+      id: `admin-${email}`,
+      name: email,
+      role: "School admin",
+      signIn: email,
+      access: ["Admin dashboard", "All SchoolWork subject classes", "School chat", "Public website pages"],
+    }));
+  const rows = [...standaloneAdminRows, ...staffRows, ...studentRows];
+
+  return (
+    <div className="access-overview">
+      <section className="access-summary-grid">
+        <article className="access-summary-card">
+          <strong>Public website</strong>
+          <span>Everyone can view published school pages, about pages, news, calendar, staff, and student/guardian information pages.</span>
+        </article>
+        <article className="access-summary-card">
+          <strong>Admin dashboard</strong>
+          <span>School admin emails can edit school content, people, academics, settings, and all SchoolWork areas.</span>
+        </article>
+        <article className="access-summary-card">
+          <strong>SchoolWork</strong>
+          <span>Admins see all subject classes. Teachers see assigned subject classes. Students see subject classes they belong to.</span>
+        </article>
+        <article className="access-summary-card">
+          <strong>School chat</strong>
+          <span>Students can contact teachers and admins{allowStudentMessaging ? ", and student-to-student messaging is enabled." : ". Student-to-student messaging is disabled."}</span>
+        </article>
+      </section>
+      <div className="data-table-wrap">
+        <table className="data-table access-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th>Sign-in</th>
+              <th>Access</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td><strong>{row.name}</strong></td>
+                <td>{row.role}</td>
+                <td>{row.signIn}</td>
+                <td>{row.access.join(" | ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function NewsTable({
   news,
   onEdit,
@@ -4244,47 +4626,115 @@ function SchoolWorkOverview({
   subjects,
   classes,
   students,
+  role,
+  participantLabel,
   onOpen,
 }: {
   subjectClasses: SubjectClass[];
   subjects: Subject[];
   classes: ClassGroup[];
   students: Student[];
+  role?: SchoolWorkAccessLevel;
+  participantLabel?: string;
   onOpen: (subjectClassId: string) => void;
 }) {
+  const [activeOverviewMenu, setActiveOverviewMenu] = useState<"subjects" | "contactTeacher">("subjects");
+  const canViewContactTeacherClasses = role === "admin" || role === "teacher";
+  const contactTeacherClasses = canViewContactTeacherClasses
+    ? classes.filter((classGroup) => {
+      if (!classGroup.teacher) {
+        return false;
+      }
+      return role === "admin" || classGroup.teacher === participantLabel;
+    })
+    : [];
+
+  const overviewMenu = canViewContactTeacherClasses ? (
+    <nav className="school-work-overview-menu" aria-label="School work overview sections">
+      <button
+        className={activeOverviewMenu === "subjects" ? "active-school-work-overview-menu-item" : ""}
+        type="button"
+        onClick={() => setActiveOverviewMenu("subjects")}
+      >
+        Subject classes
+      </button>
+      <button
+        className={activeOverviewMenu === "contactTeacher" ? "active-school-work-overview-menu-item" : ""}
+        type="button"
+        onClick={() => setActiveOverviewMenu("contactTeacher")}
+      >
+        Contact teacher
+      </button>
+    </nav>
+  ) : null;
+
+  if (activeOverviewMenu === "contactTeacher" && canViewContactTeacherClasses) {
+    return (
+      <div className="school-work-overview">
+        {overviewMenu}
+        {contactTeacherClasses.length === 0 ? (
+          <div className="empty-editor-state">
+            <h3>No contact teacher classes</h3>
+            <p>{role === "admin" ? "No classes have a contact teacher assigned." : "You are not assigned as contact teacher for any classes."}</p>
+          </div>
+        ) : (
+          <div className="school-work-card-grid">
+            {contactTeacherClasses.map((classGroup) => {
+              const classStudents = students.filter((student) => student.classId === classGroup.id);
+              return (
+                <article className="school-work-card school-work-contact-teacher-card" key={classGroup.id}>
+                  <strong>{classGroup.name}</strong>
+                  <span>{classGroup.grade ? `Grade ${classGroup.grade}` : "No grade set"}</span>
+                  <span>{classStudents.length} student{classStudents.length === 1 ? "" : "s"}</span>
+                  {role === "admin" ? <span>{classGroup.teacher}</span> : null}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (subjectClasses.length === 0) {
     return (
-      <div className="empty-editor-state">
-        <h3>No subject classes available</h3>
-        <p>Admins can access all subject classes. Teachers see subject classes where their staff email matches the assigned teacher.</p>
+      <div className="school-work-overview">
+        {overviewMenu}
+        <div className="empty-editor-state">
+          <h3>No subject classes available</h3>
+          <p>Admins can access all subject classes. Teachers see subject classes where their staff email matches the assigned teacher.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="school-work-card-grid">
-      {subjectClasses.map((subjectClass) => {
-        const subject = subjects.find((item) => item.id === subjectClass.subjectId);
-        const mainClass = classes.find((item) => item.id === subjectClass.baseClassId);
-        return (
-          <button
-            className="school-work-card"
-            key={subjectClass.id}
-            type="button"
-            onClick={() => onOpen(subjectClass.id)}
-            style={{ "--subject-card-color": subject?.color ?? "#1f6857" } as React.CSSProperties}
-          >
-            <strong>{subject?.name ?? subjectClass.name}</strong>
-            <span className="subject-card-teacher">
-              <span className="subject-card-teacher-icon">
-                <FontAwesomeIcon icon={faUser} />
+    <div className="school-work-overview">
+      {overviewMenu}
+      <div className="school-work-card-grid">
+        {subjectClasses.map((subjectClass) => {
+          const subject = subjects.find((item) => item.id === subjectClass.subjectId);
+          const mainClass = classes.find((item) => item.id === subjectClass.baseClassId);
+          return (
+            <button
+              className="school-work-card"
+              key={subjectClass.id}
+              type="button"
+              onClick={() => onOpen(subjectClass.id)}
+              style={{ "--subject-card-color": subject?.color ?? "#1f6857" } as React.CSSProperties}
+            >
+              <strong>{subject?.name ?? subjectClass.name}</strong>
+              <span className="subject-card-teacher">
+                <span className="subject-card-teacher-icon">
+                  <FontAwesomeIcon icon={faUser} />
+                </span>
+                {subjectClass.teacherName || "No teacher assigned"}
               </span>
-              {subjectClass.teacherName || "No teacher assigned"}
-            </span>
-            <span>{mainClass?.grade ? `Grade ${mainClass.grade}` : mainClass?.name ?? "Mixed classes"}</span>
-          </button>
-        );
-      })}
+              <span>{mainClass?.grade ? `Grade ${mainClass.grade}` : mainClass?.name ?? "Mixed classes"}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -4478,11 +4928,31 @@ function GradebookView({
   onOpenAssessment: (assessmentId: string) => void;
 }) {
   const [studentSearch, setStudentSearch] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const sortedAssessments = [...assessments].sort((first, second) => {
     const dateDifference = new Date(first.date).getTime() - new Date(second.date).getTime();
     return dateDifference || first.title.localeCompare(second.title);
   });
   const filteredStudents = students.filter((student) => `${student.firstName} ${student.lastName}`.toLowerCase().includes(studentSearch.trim().toLowerCase()));
+  const selectedStudent = students.find((student) => student.id === selectedStudentId);
+
+  if (selectedStudent) {
+    return (
+      <section className="assessment-record-page">
+        <div className="assessment-record-heading">
+          <div>
+            <p className="eyebrow">Student grades</p>
+            <h2>{selectedStudent.firstName} {selectedStudent.lastName}</h2>
+          </div>
+          <button className="assessment-back-link" type="button" onClick={() => setSelectedStudentId(null)}>
+            <ArrowLeft size={16} />
+            Back to assessment record
+          </button>
+        </div>
+        <StudentGradebookView assessments={assessments} scales={scales} studentId={selectedStudent.id} />
+      </section>
+    );
+  }
 
   return (
     <section className="assessment-record-page">
@@ -4527,7 +4997,11 @@ function GradebookView({
               <tbody>
                 {filteredStudents.map((student) => (
                   <tr key={student.id}>
-                    <td><strong>{student.firstName} {student.lastName}</strong></td>
+                    <td>
+                      <button className="gradebook-student-button" type="button" onClick={() => setSelectedStudentId(student.id)}>
+                        <strong>{student.firstName} {student.lastName}</strong>
+                      </button>
+                    </td>
                     <td>{getStudentOverallGradeDisplay(sortedAssessments, scales, student.id)}</td>
                     {sortedAssessments.map((assessment) => (
                       <td key={assessment.id}>
@@ -4585,7 +5059,7 @@ function StudentGradebookView({
           <article className="student-assessment-grade-card" key={assessment.id}>
             <div className="student-assessment-grade-heading">
               <h3>{assessment.title}</h3>
-              <strong>Grade: {getAssessmentGradeDisplay(assessment, scales, studentId)}</strong>
+              <p>Grade: {getAssessmentGradeDisplay(assessment, scales, studentId)}</p>
               <time>Date: {assessment.date}</time>
             </div>
             <div className="student-assessment-feedback">
@@ -4644,7 +5118,7 @@ function AssessmentResourceDetail({
           </button>
         </div> : null}
       </div>
-      {assessment.description ? <p className="assessment-description">{assessment.description}</p> : null}
+      {assessment.description && (!selectedStudent || isStudentSubmitMode) ? <p className="assessment-description">{assessment.description}</p> : null}
       {students.length === 0 ? (
         <div className="empty-editor-state">
           <h3>No students in this subject class</h3>
@@ -4904,23 +5378,30 @@ function TestResourceView({
   scale,
   accessLevel,
   activeStudentId,
+  onBeginTest,
   onSubmissionChange,
+  onSubmissionDelete,
 }: {
   test: SubjectResource;
   scale?: AssessmentScale;
   accessLevel: SchoolWorkAccessLevel;
   activeStudentId?: string;
+  onBeginTest?: () => void;
   onSubmissionChange: (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => void;
+  onSubmissionDelete?: (studentId: string) => void;
 }) {
   const questions = test.questions ?? [];
+  const cursorInsidePageRef = useRef(true);
   const existingSubmission = test.testSubmissions?.find((submission) => submission.studentId === activeStudentId);
   const [localSubmission, setLocalSubmission] = useState<NonNullable<SubjectResource["testSubmissions"]>[number]>(() => existingSubmission ?? {
     studentId: activeStudentId ?? "student",
     answers: {},
   });
+  const latestSubmissionRef = useRef(localSubmission);
   const storageKey = `edulink-test-${test.id}-${activeStudentId ?? "student"}`;
   const submitted = Boolean(localSubmission.submittedAt);
   const testStarted = Boolean(localSubmission.startedAt);
+  const isStudentTestActive = accessLevel === "student" && testStarted && !submitted;
   const scheduledStartDate = test.startsAt ? new Date(test.startsAt) : null;
   const scheduledStartReached = !scheduledStartDate || scheduledStartDate.getTime() <= Date.now();
   const shouldUseLobby = Boolean(test.lobbyEnabled) || Boolean(test.startsAt);
@@ -4934,6 +5415,7 @@ function TestResourceView({
     }
     return null;
   })();
+  const cursorOutsideSessions = getCursorOutsideSessions(localSubmission.proctorEvents ?? []);
 
   useEffect(() => {
     if (!activeStudentId) {
@@ -4943,6 +5425,11 @@ function TestResourceView({
     if (stored && !existingSubmission?.submittedAt) {
       try {
         const parsed = JSON.parse(stored) as typeof localSubmission;
+        if (parsed.submittedAt) {
+          window.localStorage.removeItem(storageKey);
+          return;
+        }
+        latestSubmissionRef.current = parsed;
         setLocalSubmission(parsed);
       } catch {
         // Ignore malformed local test backups.
@@ -4964,9 +5451,28 @@ function TestResourceView({
   }, [submitted, test.autoSubmitOnTimerEnd, timerDeadline?.getTime()]);
 
   const saveSubmission = (submission: typeof localSubmission) => {
+    latestSubmissionRef.current = submission;
     setLocalSubmission(submission);
     window.localStorage.setItem(storageKey, JSON.stringify(submission));
     onSubmissionChange(submission);
+  };
+  const recordProctorEvent = (type: NonNullable<typeof localSubmission.proctorEvents>[number]["type"]) => {
+    if (!activeStudentId || !isStudentTestActive) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const event = {
+      id: `proctor-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      type,
+      at: now,
+    };
+    const currentSubmission = latestSubmissionRef.current;
+    saveSubmission({
+      ...currentSubmission,
+      studentId: activeStudentId,
+      lastSavedAt: now,
+      proctorEvents: [...(currentSubmission.proctorEvents ?? []), event],
+    });
   };
   const updateAnswer = (questionId: string, answer: string | string[]) => {
     if (!activeStudentId || submitted || (shouldUseLobby && !testStarted)) {
@@ -5012,6 +5518,47 @@ function TestResourceView({
     });
   };
 
+  useEffect(() => {
+    if (!isStudentTestActive) {
+      return undefined;
+    }
+    cursorInsidePageRef.current = true;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        recordProctorEvent("page-hidden");
+      }
+    };
+    const handleBlur = () => recordProctorEvent("window-blur");
+    const handleMouseEnter = (event: MouseEvent) => {
+      if (event.relatedTarget) {
+        return;
+      }
+      if (!cursorInsidePageRef.current) {
+        recordProctorEvent("cursor-entered-page");
+      }
+      cursorInsidePageRef.current = true;
+    };
+    const handleMouseLeave = (event: MouseEvent) => {
+      if (event.relatedTarget) {
+        return;
+      }
+      if (cursorInsidePageRef.current) {
+        cursorInsidePageRef.current = false;
+        recordProctorEvent("cursor-left-page");
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("mouseover", handleMouseEnter);
+    window.addEventListener("mouseout", handleMouseLeave);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("mouseover", handleMouseEnter);
+      window.removeEventListener("mouseout", handleMouseLeave);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [isStudentTestActive, localSubmission]);
+
   if (accessLevel !== "student") {
     return (
       <div className="test-summary">
@@ -5022,7 +5569,13 @@ function TestResourceView({
           <p><ClipboardCheck size={16} /><strong>Grading:</strong> {(test.gradingMode ?? "auto") === "auto" ? "Auto grading" : "Manual grading"}</p>
           <p><Clock size={16} /><strong>Timer:</strong> {getTestTimerLabel(test)}</p>
         </div>
-        <TestSubmittedResults test={test} scale={scale} onSubmissionChange={onSubmissionChange} />
+        {onBeginTest ? (
+          <button className="primary-action test-start-button" type="button" onClick={onBeginTest}>
+            <ClipboardCheck size={16} />
+            Begin test
+          </button>
+        ) : null}
+        <TestSubmittedResults test={test} scale={scale} onSubmissionChange={onSubmissionChange} onSubmissionDelete={onSubmissionDelete} />
       </div>
     );
   }
@@ -5030,10 +5583,13 @@ function TestResourceView({
   return (
     <div className="test-taking-view">
       <p>{test.description || "No description yet."}</p>
-      {shouldUseLobby && !testStarted ? <div className="empty-editor-state">
-        <h3>Waiting in lobby</h3>
-        <p>{scheduledStartDate && !scheduledStartReached ? `This test opens at ${formatDateTime(scheduledStartDate.toISOString())}.` : "Your answers begin saving after you start the test."}</p>
-        <button className="primary-action" type="button" onClick={startTest} disabled={!canStartFromLobby}>Start test</button>
+      {!testStarted ? <div className="empty-editor-state">
+        <h3>{shouldUseLobby ? "Waiting in lobby" : "Ready to begin"}</h3>
+        <p>{scheduledStartDate && !scheduledStartReached ? `This test opens at ${formatDateTime(scheduledStartDate.toISOString())}.` : "Leaving the browser page during the test is recorded for teacher review."}</p>
+        <button className="primary-action test-start-button" type="button" onClick={startTest} disabled={!canStartFromLobby}>
+          <ClipboardCheck size={16} />
+          Begin test
+        </button>
       </div> : null}
       <div className="assessment-meta-list">
         <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Due:</strong> {test.dueDate || "No due date"}</p>
@@ -5041,6 +5597,25 @@ function TestResourceView({
         {timerDeadline ? <p><Clock size={16} /><strong>Auto-submit:</strong> {formatDateTime(timerDeadline.toISOString())}</p> : null}
         <p><Save size={16} /><strong>Autosave:</strong> {localSubmission.lastSavedAt ? formatDateTime(localSubmission.lastSavedAt) : "Not saved yet"}</p>
       </div>
+      {isStudentTestActive ? (
+        <div className="test-submission-alerts" role="status">
+          <strong>Activity registered</strong>
+          <p>Your teacher can see when the cursor leaves or enters this page during the test.</p>
+          {cursorOutsideSessions.length > 0 ? (
+            cursorOutsideSessions.slice(-6).map((session) => (
+              <p key={session.id}>
+                <strong>Cursor left:</strong> {formatDateTimeWithSeconds(session.leftAt)}
+                {" | "}
+                <strong>Reentered:</strong> {session.enteredAt ? formatDateTimeWithSeconds(session.enteredAt) : "Not yet"}
+                {" | "}
+                <strong>Time outside:</strong> {session.enteredAt ? formatDuration(new Date(session.enteredAt).getTime() - new Date(session.leftAt).getTime()) : "Still outside"}
+              </p>
+            ))
+          ) : (
+            <p>No cursor leave/reenter events recorded yet.</p>
+          )}
+        </div>
+      ) : null}
       {submitted && (test.publishResults === "immediately" || localSubmission.reviewed) && (test.gradingMode ?? "auto") === "auto" ? (() => {
         const result = getTestAutoGrade(test, localSubmission, scale);
         return <div className="student-graded-assessment-summary">
@@ -5050,7 +5625,7 @@ function TestResourceView({
       })() : submitted && test.publishResults === "after-review" ? (
         <p className="form-status">Submitted. Results will be published after review.</p>
       ) : null}
-      {questions.map((question, index) => {
+      {testStarted ? questions.map((question, index) => {
         const answer = localSubmission.answers[question.id];
         return (
           <article className="test-question-card" key={question.id}>
@@ -5084,10 +5659,10 @@ function TestResourceView({
             )}
           </article>
         );
-      })}
-      <button className="primary-action" type="button" disabled={submitted} onClick={() => submit(false)}>
+      }) : null}
+      {testStarted ? <button className="primary-action" type="button" disabled={submitted} onClick={() => submit(false)}>
         {submitted ? "Submitted" : "Submit test"}
-      </button>
+      </button> : null}
     </div>
   );
 }
@@ -5096,51 +5671,147 @@ function TestSubmittedResults({
   test,
   scale,
   onSubmissionChange,
+  onSubmissionDelete,
 }: {
   test: SubjectResource;
   scale?: AssessmentScale;
   onSubmissionChange: (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => void;
+  onSubmissionDelete?: (studentId: string) => void;
 }) {
   const questions = test.questions ?? [];
-  const submissions = (test.testSubmissions ?? []).filter((submission) => submission.submittedAt);
+  const attempts = [...(test.testSubmissions ?? [])].sort((first, second) => {
+    const firstTime = first.submittedAt ?? first.lastSavedAt ?? first.startedAt ?? "";
+    const secondTime = second.submittedAt ?? second.lastSavedAt ?? second.startedAt ?? "";
+    return new Date(secondTime).getTime() - new Date(firstTime).getTime();
+  });
+  const submittedCount = attempts.filter((submission) => submission.submittedAt).length;
+  const [openSubmissionId, setOpenSubmissionId] = useState<string | null>(null);
+  const deleteSubmission = (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => {
+    if (!onSubmissionDelete) {
+      return;
+    }
+    const label = submission.studentId === "preview" ? "the teacher preview result" : `the result for ${submission.studentId}`;
+    if (window.confirm(`Delete ${label}? This cannot be undone.`)) {
+      onSubmissionDelete(submission.studentId);
+    }
+  };
 
   return (
     <section className="test-question-list">
       <div>
         <h3>Submitted results</h3>
-        <p className="form-status">{submissions.length} submitted result{submissions.length === 1 ? "" : "s"}</p>
+        <p className="form-status">{submittedCount} submitted result{submittedCount === 1 ? "" : "s"} · {attempts.length} student attempt{attempts.length === 1 ? "" : "s"}</p>
       </div>
-      {submissions.length === 0 ? (
+      {attempts.length === 0 ? (
         <div className="empty-editor-state">
           <h3>No submitted results yet</h3>
-          <p>Student and teacher preview submissions will appear here after the test is submitted.</p>
+          <p>Student and teacher preview attempts will appear here after the test is opened.</p>
         </div>
-      ) : submissions.map((submission) => (
-        <article className="test-question-card" key={submission.studentId}>
-          <div className="test-question-heading">
-            <h4>{submission.studentId === "preview" ? "Teacher preview" : `Student: ${submission.studentId}`}</h4>
-            <button className="secondary-action" type="button" onClick={() => onSubmissionChange({ ...submission, reviewed: true })}>
-              {submission.reviewed ? "Reviewed" : "Mark reviewed"}
-            </button>
-          </div>
-          {(test.gradingMode ?? "auto") === "auto" ? (() => {
-            const result = getTestAutoGrade(test, submission, scale);
-            return <p className="form-status">Auto grade: {result.score}/{result.maxScore} ({result.percentage}%){result.level ? ` · ${result.level.value}` : ""}</p>;
-          })() : <p className="form-status">Manual grading required.</p>}
-          {questions.map((question) => {
-            const answer = submission.answers[question.id];
-            const optionLabels = Array.isArray(answer)
-              ? answer.map((optionId) => question.options?.find((option) => option.id === optionId)?.text ?? optionId).join(", ")
-              : question.options?.find((option) => option.id === answer)?.text ?? answer;
-            return (
-              <div className="test-review-answer" key={question.id}>
-                <strong>{question.prompt} ({question.marks ?? 1} mark{(question.marks ?? 1) === 1 ? "" : "s"})</strong>
-                <p>{optionLabels || "No answer"}</p>
+      ) : attempts.map((submission) => {
+        const isOpen = openSubmissionId === submission.studentId;
+        const integrityEvents = submission.proctorEvents ?? [];
+        const hasIntegrityEvents = integrityEvents.length > 0;
+        const statusLabel = submission.submittedAt ? "Submitted" : submission.startedAt ? "Not submitted" : "Not started";
+        return (
+          <article className="test-question-card test-result-row" key={submission.studentId}>
+            <div className="test-result-row-summary">
+              <div>
+                <h4>
+                  {submission.studentId === "preview" ? "Teacher preview" : `Student: ${submission.studentId}`}
+                  {hasIntegrityEvents ? <TriangleAlert className="test-integrity-icon" size={18} aria-label="Test integrity alert" /> : null}
+                </h4>
+                <p className="form-status">
+                  <strong>{statusLabel}</strong>
+                  {submission.submittedAt ? ` · Submitted ${formatDateTimeWithSeconds(submission.submittedAt)}` : submission.lastSavedAt ? ` · Last saved ${formatDateTimeWithSeconds(submission.lastSavedAt)}` : ""}
+                </p>
               </div>
-            );
-          })}
-        </article>
-      ))}
+              <div className="test-result-actions">
+                {hasIntegrityEvents ? <span className="test-integrity-badge">{integrityEvents.length} integrity event{integrityEvents.length === 1 ? "" : "s"}</span> : null}
+                <button className="secondary-action" type="button" onClick={() => setOpenSubmissionId(isOpen ? null : submission.studentId)}>
+                  {isOpen ? "Close" : "Open"}
+                </button>
+              </div>
+            </div>
+            {isOpen ? (
+              <div className="test-result-detail">
+                <div className="test-result-actions">
+                  {submission.submittedAt ? (
+                    <button className="secondary-action" type="button" onClick={() => onSubmissionChange({ ...submission, reviewed: true })}>
+                      {submission.reviewed ? "Reviewed" : "Mark reviewed"}
+                    </button>
+                  ) : null}
+                  {submission.submittedAt && onSubmissionDelete ? (
+                    <button className="remove-button" type="button" onClick={() => deleteSubmission(submission)}>
+                      <Trash2 size={16} />
+                      Delete result
+                    </button>
+                  ) : null}
+                </div>
+                {submission.submittedAt ? (test.gradingMode ?? "auto") === "auto" ? (() => {
+                  const result = getTestAutoGrade(test, submission, scale);
+                  return <p className="form-status">Auto grade: {result.score}/{result.maxScore} ({result.percentage}%){result.level ? ` · ${result.level.value}` : ""}</p>;
+                })() : <p className="form-status">Manual grading required.</p> : (
+                  <p className="form-status">This attempt has not been submitted yet.</p>
+                )}
+                {hasIntegrityEvents ? (
+                  <div className="test-submission-alerts">
+                    <strong>Test integrity alerts</strong>
+                    {integrityEvents.map((event) => (
+                      <p key={event.id}>{getProctorEventLabel(event.type)} at {formatDateTimeWithSeconds(event.at)}</p>
+                    ))}
+                  </div>
+                ) : null}
+                {questions.map((question) => {
+                  const answer = submission.answers[question.id];
+                  const optionLabels = Array.isArray(answer)
+                    ? answer.map((optionId) => question.options?.find((option) => option.id === optionId)?.text ?? optionId).join(", ")
+                    : question.options?.find((option) => option.id === answer)?.text ?? answer;
+                  return (
+                    <div className="test-review-answer" key={question.id}>
+                      <strong>{question.prompt} ({question.marks ?? 1} mark{(question.marks ?? 1) === 1 ? "" : "s"})</strong>
+                      <p>{optionLabels || "No answer"}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+function SchoolWorkStatusCards({ onOpenGrades }: { onOpenGrades: () => void }) {
+  return (
+    <section className="school-work-section-menu">
+      <div>
+        <h3>Status and follow-up</h3>
+        <p>Choose which status view you want to open.</p>
+      </div>
+      <div className="editor-section-card-grid">
+        <button className="editor-section-card" type="button" onClick={onOpenGrades}>
+          <strong>Grades</strong>
+          <span>Open the assessment record for this subject class.</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function SchoolWorkSettingsCards({ onOpenAssessmentScales }: { onOpenAssessmentScales: () => void }) {
+  return (
+    <section className="school-work-section-menu">
+      <div>
+        <h3>Settings</h3>
+        <p>Choose which school work setting you want to manage.</p>
+      </div>
+      <div className="editor-section-card-grid">
+        <button className="editor-section-card" type="button" onClick={onOpenAssessmentScales}>
+          <strong>Assessment scales</strong>
+          <span>Manage global scale availability and school-specific scales.</span>
+        </button>
+      </div>
     </section>
   );
 }
@@ -5149,10 +5820,12 @@ function SchoolWorkSubjectSettings({
   globalAssessmentScales,
   settings,
   onChange,
+  onBack,
 }: {
   globalAssessmentScales: AssessmentScale[];
   settings: SchoolWorkSettings;
   onChange: (settings: SchoolWorkSettings) => void;
+  onBack: () => void;
 }) {
   const enabledGlobalIds = settings.enabledGlobalAssessmentScaleIds ?? [];
   const customScales = settings.customAssessmentScales ?? [];
@@ -5165,8 +5838,12 @@ function SchoolWorkSubjectSettings({
 
   return (
     <section className="subject-overview-panel school-work-settings-panel">
+      <button className="school-work-back-link" type="button" onClick={onBack}>
+        <ArrowLeft size={16} />
+        Back to settings
+      </button>
       <div className="subject-student-heading">
-        <h3>Settings</h3>
+        <h3>Assessment scales</h3>
         <span>Assessment scales</span>
       </div>
       <div className="settings-scale-section">
@@ -5277,164 +5954,6 @@ function SchoolWorkSubjectSettings({
   );
 }
 
-type ChatParticipant = {
-  id: string;
-  name: string;
-  role: "admin" | "teacher" | "staff" | "student";
-};
-
-function SchoolChatPopup({
-  school,
-  identity,
-  messages,
-  onClose,
-  onMessagesChange,
-}: {
-  school: School;
-  identity: SchoolWorkIdentity;
-  messages: SchoolChatMessage[];
-  onClose: () => void;
-  onMessagesChange: (messages: SchoolChatMessage[]) => void;
-}) {
-  const currentUser = getCurrentChatParticipant(school, identity);
-  const participants = getSchoolChatParticipants(school);
-  const recipients = participants.filter((participant) => canMessageParticipant(currentUser, participant, Boolean(school.schoolWorkSettings?.allowStudentMessaging)));
-  const conversationRecipients = recipients.filter((participant) => messages.some((message) =>
-    (message.fromId === currentUser.id && message.toId === participant.id) ||
-    (message.fromId === participant.id && message.toId === currentUser.id)));
-  const [recipientId, setRecipientId] = useState(() => conversationRecipients[0]?.id ?? "");
-  const [recipientPickerOpen, setRecipientPickerOpen] = useState(false);
-  const [recipientSearch, setRecipientSearch] = useState("");
-  const [body, setBody] = useState("");
-  const activeRecipient = recipients.find((participant) => participant.id === recipientId) ?? conversationRecipients[0] ?? null;
-  const searchableRecipients = recipients.filter((participant) =>
-    `${participant.name} ${participant.role}`.toLowerCase().includes(recipientSearch.trim().toLowerCase()));
-  const threadMessages = activeRecipient
-    ? messages
-      .filter((message) =>
-        (message.fromId === currentUser.id && message.toId === activeRecipient.id) ||
-        (message.fromId === activeRecipient.id && message.toId === currentUser.id))
-      .sort((first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime())
-    : [];
-
-  const sendMessage = () => {
-    const trimmedBody = body.trim();
-    if (!trimmedBody || !activeRecipient) {
-      return;
-    }
-    onMessagesChange([
-      ...messages,
-      {
-        id: `message-${Date.now()}`,
-        fromId: currentUser.id,
-        fromName: currentUser.name,
-        toId: activeRecipient.id,
-        toName: activeRecipient.name,
-        body: trimmedBody,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setBody("");
-  };
-
-  return (
-    <div className="modal-backdrop chat-popup-backdrop" role="presentation">
-      <section className="chat-popup" role="dialog" aria-modal="true" aria-labelledby="chat-popup-title">
-        <div className="chat-popup-header">
-          <div>
-            <p className="eyebrow">Messages</p>
-            <h2 id="chat-popup-title">School chat</h2>
-          </div>
-          <button className="secondary-action" type="button" onClick={onClose}>Close</button>
-        </div>
-        <div className="chat-popup-layout">
-          <aside className="chat-recipient-list">
-            <div className="chat-recipient-heading">
-              <strong>Conversations</strong>
-              <button className="icon-action" type="button" onClick={() => setRecipientPickerOpen((open) => !open)} aria-label="Start conversation">
-                <Plus size={16} />
-              </button>
-            </div>
-            {recipientPickerOpen ? (
-              <div className="chat-recipient-picker">
-                <input value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} placeholder="Search users" />
-                <div>
-                  {searchableRecipients.length === 0 ? <p>No matching users.</p> : searchableRecipients.map((participant) => (
-                    <button
-                      key={participant.id}
-                      type="button"
-                      onClick={() => {
-                        setRecipientId(participant.id);
-                        setRecipientPickerOpen(false);
-                        setRecipientSearch("");
-                      }}
-                    >
-                      <strong>{participant.name}</strong>
-                      <span>{participant.role}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {conversationRecipients.length === 0 ? (
-              <p>No conversations yet.</p>
-            ) : conversationRecipients.map((participant) => (
-                <button
-                  className={participant.id === activeRecipient?.id ? "active-chat-recipient" : ""}
-                  key={participant.id}
-                  type="button"
-                  onClick={() => setRecipientId(participant.id)}
-                >
-                  <strong>{participant.name}</strong>
-                  <span>{participant.role}</span>
-                </button>
-              ))}
-          </aside>
-          <section className="chat-thread">
-            {activeRecipient ? (
-              <>
-                <div className="chat-thread-heading">
-                  <h3>{activeRecipient.name}</h3>
-                  <span>{activeRecipient.role}</span>
-                </div>
-                <div className="chat-message-list">
-                  {threadMessages.length === 0 ? (
-                    <div className="empty-editor-state">
-                      <h3>No messages yet</h3>
-                      <p>Start the conversation below.</p>
-                    </div>
-                  ) : threadMessages.map((message) => (
-                    <article className={message.fromId === currentUser.id ? "chat-message own-chat-message" : "chat-message"} key={message.id}>
-                      <strong>{message.fromName}</strong>
-                      <p>{message.body}</p>
-                      <time>{formatDateTime(message.createdAt)}</time>
-                    </article>
-                  ))}
-                </div>
-                <form
-                  className="chat-compose"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    sendMessage();
-                  }}
-                >
-                  <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} placeholder="Write a message" />
-                  <button className="primary-action" type="submit">Send</button>
-                </form>
-              </>
-            ) : (
-              <div className="empty-editor-state">
-                <h3>No recipients available</h3>
-                <p>Messaging is limited by the school chat settings.</p>
-              </div>
-            )}
-          </section>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function SubjectClassWorkPage({
   subjectClass,
   subjects,
@@ -5463,10 +5982,13 @@ function SubjectClassWorkPage({
   onSchoolWorkSettingsChange?: (settings: SchoolWorkSettings) => void | Promise<void>;
 }) {
   const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "students" | "settings">("resources");
+  const [activeSettingsSection, setActiveSettingsSection] = useState<"assessmentScales" | null>(null);
+  const [activeStatusSection, setActiveStatusSection] = useState<"grades" | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState("root");
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [draftFolderEdit, setDraftFolderEdit] = useState<Pick<ResourceFolder, "name" | "description">>({ name: "", description: "" });
   const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
   const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
   const [showFolderResourcePicker, setShowFolderResourcePicker] = useState(false);
@@ -5474,7 +5996,6 @@ function SubjectClassWorkPage({
   const [dragTargetFolderId, setDragTargetFolderId] = useState<string | null>(null);
   const [draftAnnouncement, setDraftAnnouncement] = useState<Pick<SubjectClassAnnouncement, "title" | "body">>({ title: "", body: "" });
   const [selectedGradeAssessmentId, setSelectedGradeAssessmentId] = useState<string | null>(null);
-  const [activeStatusView, setActiveStatusView] = useState<"assessmentRecord">("assessmentRecord");
   const committedResources = useMemo(() => subjectClass?.resources ?? [], [subjectClass?.resources]);
   const committedResourceSignature = useMemo(() => JSON.stringify(committedResources), [committedResources]);
   const pendingResourceSaveSignature = useRef<string | null>(null);
@@ -5575,6 +6096,25 @@ function SubjectClassWorkPage({
   const updateFolders = (nextFolders: ResourceFolder[]) => onChange({ ...subjectClass, resourceFolders: nextFolders });
   const updateResources = (nextResources: SubjectResource[]) => onChange({ ...subjectClass, resources: nextResources });
   const updateAssessments = (nextAssessments: Assessment[]) => onChange({ ...subjectClass, assessments: nextAssessments });
+  const openFolderEditor = (folder: ResourceFolder) => {
+    setDraftFolderEdit({ name: folder.name, description: folder.description ?? "" });
+    setEditingFolderId(folder.id);
+  };
+  const closeFolderEditor = () => {
+    setEditingFolderId(null);
+    setDraftFolderEdit({ name: "", description: "" });
+  };
+  const saveFolderEditor = () => {
+    if (!editingFolderId) {
+      return;
+    }
+    updateFolders(folders.map((folder) => folder.id === editingFolderId ? {
+      ...folder,
+      name: draftFolderEdit.name.trim() || "Untitled folder",
+      description: draftFolderEdit.description?.trim() || undefined,
+    } : folder));
+    closeFolderEditor();
+  };
   const updateAssessment = (assessmentId: string, patch: Partial<Assessment>) => {
     updateAssessments(assessments.map((assessment) => assessment.id === assessmentId ? ensureAssessmentGrades({ ...assessment, ...patch }, subjectClassStudents) : assessment));
   };
@@ -5626,6 +6166,18 @@ function SubjectClassWorkPage({
     setEditingAssessmentId(null);
     setShowFolderResourcePicker(false);
     setExpandedFolderIds((current) => new Set(current).add(folderId));
+  };
+  const selectOrCollapseTreeFolder = (folderId: string) => {
+    const isCurrentFolderSelected = !selectedResourceId && !selectedAssessmentId && selectedFolderId === folderId;
+    if (isCurrentFolderSelected && expandedFolderIds.has(folderId)) {
+      setExpandedFolderIds((current) => {
+        const next = new Set(current);
+        next.delete(folderId);
+        return next;
+      });
+      return;
+    }
+    selectTreeFolder(folderId);
   };
   const selectResource = (resource: SubjectResource) => {
     setSelectedFolderId(resource.folderId ?? "root");
@@ -5720,6 +6272,7 @@ function SubjectClassWorkPage({
     updateResource(resourceId, { imageDataUrl });
   };
   const removeFolder = (folderId: string) => {
+    const folderToRemove = folders.find((folder) => folder.id === folderId);
     const idsToRemove = new Set<string>([folderId]);
     let changed = true;
     while (changed) {
@@ -5731,25 +6284,52 @@ function SubjectClassWorkPage({
         }
       });
     }
-    updateFolders(folders.filter((folder) => !idsToRemove.has(folder.id)));
+    const resourceCount = committedResources.filter((resource) => resource.folderId && idsToRemove.has(resource.folderId)).length;
+    const assessmentCount = assessments.filter((assessment) => assessment.folderId && idsToRemove.has(assessment.folderId)).length;
+    const childFolderCount = idsToRemove.size - 1;
+    const deleteDetails = [
+      childFolderCount ? `${childFolderCount} subfolder${childFolderCount === 1 ? "" : "s"}` : "",
+      resourceCount ? `${resourceCount} resource${resourceCount === 1 ? "" : "s"}` : "",
+      assessmentCount ? `${assessmentCount} assessment${assessmentCount === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(", ");
+    const message = `Delete folder "${folderToRemove?.name ?? "this folder"}"?${deleteDetails ? ` This will also delete ${deleteDetails}.` : ""} This cannot be undone.`;
+    if (!window.confirm(message)) {
+      return;
+    }
+    const nextFolders = folders.filter((folder) => !idsToRemove.has(folder.id));
     const nextResources = committedResources.filter((resource) => !resource.folderId || !idsToRemove.has(resource.folderId));
     const nextAssessments = assessments.filter((assessment) => !assessment.folderId || !idsToRemove.has(assessment.folderId));
-    updateResources(nextResources);
-    updateAssessments(nextAssessments);
+    onChange({
+      ...subjectClass,
+      resourceFolders: nextFolders,
+      resources: nextResources,
+      assessments: nextAssessments,
+    });
     setDraftResources(nextResources);
     setHasUnsavedResourceChanges(false);
+    setSelectedResourceId(null);
     setSelectedAssessmentId(null);
     setSelectedFolderId("root");
+    setEditingFolderId(null);
     setShowFolderResourcePicker(false);
   };
   const removeResource = (resourceId: string) => {
+    const resourceToRemove = committedResources.find((resource) => resource.id === resourceId);
+    if (!window.confirm(`Delete resource "${resourceToRemove?.title ?? "this resource"}"? This cannot be undone.`)) {
+      return false;
+    }
     const nextResources = committedResources.filter((resource) => resource.id !== resourceId);
     updateResources(nextResources);
     setDraftResources(nextResources);
     setHasUnsavedResourceChanges(false);
     setShowFolderResourcePicker(false);
+    return true;
   };
   const removeAssessment = (assessmentId: string) => {
+    const assessmentToRemove = assessments.find((assessment) => assessment.id === assessmentId);
+    if (!window.confirm(`Delete assessment "${assessmentToRemove?.title ?? "this assessment"}"? This cannot be undone.`)) {
+      return;
+    }
     updateAssessments(assessments.filter((assessment) => assessment.id !== assessmentId));
     setSelectedAssessmentId(null);
     setShowFolderResourcePicker(false);
@@ -5900,7 +6480,7 @@ function SubjectClassWorkPage({
                     >
                       <ChevronRight size={14} />
                     </button>
-                    <button className="resource-tree-label" type="button" onClick={() => selectTreeFolder(folder.id)}>
+                    <button className="resource-tree-label" type="button" onClick={() => selectOrCollapseTreeFolder(folder.id)}>
                       <Folder size={16} />
                       <span>{folder.name}</span>
                     </button>
@@ -5958,9 +6538,12 @@ function SubjectClassWorkPage({
                 <span>{assessment.title}</span>
               </button>
             ))}
-            {canCreateSchoolWork && (parentId !== "root" || (children.length === 0 && childResources.length === 0 && childAssessments.length === 0)) ? (
+            {canCreateSchoolWork ? (
               <button
-                className="resource-tree-item resource-tree-add-resource"
+                className={[
+                  "resource-tree-item resource-tree-add-resource",
+                  showFolderResourcePicker && selectedFolderId === parentId && !selectedResourceId && !selectedAssessmentId ? "active-resource-tree-add-resource" : "",
+                ].filter(Boolean).join(" ")}
                 type="button"
                 onClick={() => {
                   selectTreeFolder(parentId);
@@ -6001,9 +6584,16 @@ function SubjectClassWorkPage({
         <span className="subject-work-nav-tabs">
           {accessLevel !== "student" ? <button className={activeWorkTab === "overview" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("overview")}>Overview</button> : null}
           <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("resources")}>Resources</button>
-          <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("status")}>Status and follow-up</button>
+          <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
+            setActiveWorkTab("status");
+            setActiveStatusSection(null);
+            setSelectedGradeAssessmentId(null);
+          }}>Status and follow-up</button>
           {accessLevel !== "student" ? <button className={activeWorkTab === "students" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("students")}>Students</button> : null}
-          {canManageSchoolWorkSettings ? <button className={activeWorkTab === "settings" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("settings")}>Settings</button> : null}
+          {canManageSchoolWorkSettings ? <button className={activeWorkTab === "settings" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
+            setActiveWorkTab("settings");
+            setActiveSettingsSection(null);
+          }}>Settings</button> : null}
         </span>
         <span className="subject-work-nav-spacer" aria-hidden="true" />
       </nav>
@@ -6051,20 +6641,10 @@ function SubjectClassWorkPage({
         <section className="status-followup-page">
           {accessLevel === "student" ? (
             <StudentGradebookView assessments={assessments} scales={assessmentScales} studentId={activeStudentId} />
+          ) : !activeStatusSection ? (
+            <SchoolWorkStatusCards onOpenGrades={() => setActiveStatusSection("grades")} />
           ) : (
             <>
-              <nav className="status-followup-menu" aria-label="Status and follow-up sections">
-                <button
-                  className={activeStatusView === "assessmentRecord" && !selectedGradeAssessmentId ? "active-status-followup-menu-item" : ""}
-                  type="button"
-                  onClick={() => {
-                    setActiveStatusView("assessmentRecord");
-                    setSelectedGradeAssessmentId(null);
-                  }}
-                >
-                  Assessment record
-                </button>
-              </nav>
               {selectedGradeAssessmentId ? (() => {
             const selectedAssessment = assessments.find((assessment) => assessment.id === selectedGradeAssessmentId);
             if (!selectedAssessment) {
@@ -6107,12 +6687,18 @@ function SubjectClassWorkPage({
               </div>
             );
               })() : (
-                <GradebookView
-                  assessments={assessments}
-                  scales={assessmentScales}
-                  students={subjectClassStudents}
-                  onOpenAssessment={setSelectedGradeAssessmentId}
-                />
+                <>
+                  <button className="school-work-back-link" type="button" onClick={() => setActiveStatusSection(null)}>
+                    <ArrowLeft size={16} />
+                    Back to status and follow-up
+                  </button>
+                  <GradebookView
+                    assessments={assessments}
+                    scales={assessmentScales}
+                    students={subjectClassStudents}
+                    onOpenAssessment={setSelectedGradeAssessmentId}
+                  />
+                </>
               )}
             </>
           )}
@@ -6153,11 +6739,15 @@ function SubjectClassWorkPage({
           )}
         </section>
       ) : null}
-      {activeWorkTab === "settings" && canManageSchoolWorkSettings ? (
+      {activeWorkTab === "settings" && canManageSchoolWorkSettings && !activeSettingsSection ? (
+        <SchoolWorkSettingsCards onOpenAssessmentScales={() => setActiveSettingsSection("assessmentScales")} />
+      ) : null}
+      {activeWorkTab === "settings" && canManageSchoolWorkSettings && activeSettingsSection === "assessmentScales" ? (
         <SchoolWorkSubjectSettings
           globalAssessmentScales={globalAssessmentScales}
           settings={effectiveSchoolWorkSettings}
           onChange={(settings) => void onSchoolWorkSettingsChange?.(settings)}
+          onBack={() => setActiveSettingsSection(null)}
         />
       ) : null}
       {activeWorkTab === "resources" ? (
@@ -6191,7 +6781,7 @@ function SubjectClassWorkPage({
             >
               <ChevronRight size={14} />
             </button>
-            <button className="resource-tree-label" type="button" onClick={() => selectTreeFolder("root")}>
+            <button className="resource-tree-label" type="button" onClick={() => selectOrCollapseTreeFolder("root")}>
               <Folder size={16} />
               <span>{subjectClass.name}</span>
             </button>
@@ -6207,25 +6797,10 @@ function SubjectClassWorkPage({
               <div>
                 <p className="eyebrow">{activeFolder ? "Folder" : "Course root"}</p>
                 {activeFolder ? (
-                  editingFolderId === activeFolder.id ? (
-                    <div className="resource-folder-fields">
-                      <input
-                        className="resource-folder-title-input"
-                        value={activeFolder.name}
-                        onChange={(event) => updateFolders(folders.map((folder) => folder.id === activeFolder.id ? { ...folder, name: event.target.value } : folder))}
-                      />
-                      <TextArea
-                        label="Folder description"
-                        value={activeFolder.description ?? ""}
-                        onChange={(description) => updateFolders(folders.map((folder) => folder.id === activeFolder.id ? { ...folder, description } : folder))}
-                      />
-                    </div>
-                  ) : (
-                    <div className="resource-folder-readonly">
-                      <h3>{activeFolder.name}</h3>
-                      {activeFolder.description ? <p>{activeFolder.description}</p> : null}
-                    </div>
-                  )
+                  <div className="resource-folder-readonly">
+                    <h3>{activeFolder.name}</h3>
+                    {activeFolder.description ? <p>{activeFolder.description}</p> : null}
+                  </div>
                 ) : (
                   <h3>{subjectClass.name}</h3>
                 )}
@@ -6233,15 +6808,9 @@ function SubjectClassWorkPage({
             ) : null}
             {canCreateSchoolWork && activeFolder && !selectedResource && !selectedAssessment ? (
               <div className="resource-detail-actions">
-                {editingFolderId === activeFolder.id ? (
-                  <button className="secondary-action" type="button" onClick={() => setEditingFolderId(null)}>
-                    Done
-                  </button>
-                ) : (
-                  <button className="secondary-action" type="button" onClick={() => setEditingFolderId(activeFolder.id)}>
-                    Edit
-                  </button>
-                )}
+                <button className="secondary-action" type="button" onClick={() => openFolderEditor(activeFolder)}>
+                  Edit
+                </button>
                 <button className="remove-button resource-remove-button" type="button" onClick={() => removeFolder(activeFolder.id)}>
                   <Trash2 size={16} />
                   Delete folder
@@ -6268,9 +6837,10 @@ function SubjectClassWorkPage({
                       </button>
                     )}
                     <button className="remove-button" type="button" onClick={() => {
-                      removeResource(selectedResource.id);
-                      setSelectedResourceId(null);
-                      setEditingResourceId(null);
+                      if (removeResource(selectedResource.id)) {
+                        setSelectedResourceId(null);
+                        setEditingResourceId(null);
+                      }
                     }}>
                       <Trash2 size={16} />
                       Delete
@@ -6303,24 +6873,15 @@ function SubjectClassWorkPage({
                   <div className={selectedResource.type === "note" ? "resource-note-readonly" : "resource-readonly-content"}>
                     {selectedResource.type === "test" ? (
                       <>
-                        {canCreateSchoolWork ? (
-                          <button
-                            className="primary-action test-start-button"
-                            type="button"
-                            onClick={() => {
-                              setPreviewTest({ ...selectedResource, lobbyEnabled: true });
-                              setPreviewSubmission({ studentId: "preview", answers: {} });
-                            }}
-                          >
-                            <ClipboardCheck size={16} />
-                            Begin test
-                          </button>
-                        ) : null}
                         <TestResourceView
                           test={selectedResource}
                           scale={assessmentScales.find((scale) => scale.id === selectedResource.scaleId)}
                           accessLevel={accessLevel}
                           activeStudentId={activeStudentId}
+                          onBeginTest={canCreateSchoolWork ? () => {
+                            setPreviewTest({ ...selectedResource, lobbyEnabled: false });
+                            setPreviewSubmission({ studentId: "preview", answers: {}, startedAt: new Date().toISOString(), lastSavedAt: new Date().toISOString() });
+                          } : undefined}
                           onSubmissionChange={(submission) => {
                             const submissions = selectedResource.testSubmissions ?? [];
                             autoSaveResource(selectedResource.id, {
@@ -6328,6 +6889,12 @@ function SubjectClassWorkPage({
                                 ...submissions.filter((item) => item.studentId !== submission.studentId),
                                 submission,
                               ],
+                            });
+                          }}
+                          onSubmissionDelete={(studentId) => {
+                            const submissions = selectedResource.testSubmissions ?? [];
+                            autoSaveResource(selectedResource.id, {
+                              testSubmissions: submissions.filter((submission) => submission.studentId !== studentId),
                             });
                           }}
                         />
@@ -6391,7 +6958,6 @@ function SubjectClassWorkPage({
                       <button className="resource-one-level-up" type="button" onClick={() => selectTreeFolder(oneLevelUpTargetId)}>
                         <ArrowLeft size={16} />
                         <span>One level up</span>
-                        {oneLevelUpLabel ? <small>{oneLevelUpLabel}</small> : null}
                       </button>
                     ) : <span />}
                     {canCreateSchoolWork ? (
@@ -6450,6 +7016,38 @@ function SubjectClassWorkPage({
             )}
           </div>
         </section>
+        </div>
+      ) : null}
+      {editingFolderId ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="staff-modal" role="dialog" aria-modal="true" aria-labelledby="folder-edit-title">
+            <div className="staff-modal-header">
+              <div>
+                <p className="eyebrow">Folder</p>
+                <h2 id="folder-edit-title">Edit folder</h2>
+              </div>
+            </div>
+            <div className="staff-modal-body">
+              <TextInput
+                label="Folder name"
+                value={draftFolderEdit.name}
+                onChange={(name) => setDraftFolderEdit((current) => ({ ...current, name }))}
+              />
+              <TextArea
+                label="Folder description"
+                value={draftFolderEdit.description ?? ""}
+                onChange={(description) => setDraftFolderEdit((current) => ({ ...current, description }))}
+              />
+            </div>
+            <div className="staff-modal-actions">
+              <button className="secondary-action" type="button" onClick={closeFolderEditor}>
+                Close
+              </button>
+              <button className="primary-action" type="button" onClick={saveFolderEditor}>
+                Save
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
       {previewTest ? (
@@ -6626,50 +7224,36 @@ function getEffectiveAssessmentScales(school: School, globalSchoolWork: GlobalSc
   ];
 }
 
-function getCurrentChatParticipant(school: School, identity: SchoolWorkIdentity): ChatParticipant {
-  if (identity.role === "student") {
-    const student = school.students.find((item) => item.id === identity.studentId);
-    return {
-      id: `student:${identity.studentId}`,
-      name: student ? `${student.firstName} ${student.lastName}` : identity.label,
-      role: "student",
-    };
+function getProctorEventLabel(type: "page-hidden" | "window-blur" | "fullscreen-exit" | "cursor-left-page" | "cursor-entered-page") {
+  if (type === "page-hidden") {
+    return "Page was hidden";
   }
-  if (identity.role === "admin") {
-    return { id: `admin:${school.id}`, name: identity.label || "School admin", role: "admin" };
+  if (type === "window-blur") {
+    return "Browser focus left the test";
   }
-  const staffMember = school.staff.find((member) => member.name === identity.label);
-  return {
-    id: `staff:${staffMember?.email || identity.label}`,
-    name: staffMember?.name || identity.label,
-    role: identity.role === "teacher" ? "teacher" : "staff",
-  };
+  if (type === "cursor-left-page") {
+    return "Cursor left the page";
+  }
+  if (type === "cursor-entered-page") {
+    return "Cursor entered the page";
+  }
+  return "Fullscreen was exited";
 }
 
-function getSchoolChatParticipants(school: School): ChatParticipant[] {
-  return [
-    { id: `admin:${school.id}`, name: "School admin", role: "admin" },
-    ...school.staff.map((member) => ({
-      id: `staff:${member.email || member.name}`,
-      name: member.name,
-      role: hasStaffCategory(member, "Teacher") ? "teacher" as const : "staff" as const,
-    })),
-    ...school.students.map((student) => ({
-      id: `student:${student.id}`,
-      name: `${student.firstName} ${student.lastName}`,
-      role: "student" as const,
-    })),
-  ];
-}
-
-function canMessageParticipant(currentUser: ChatParticipant, recipient: ChatParticipant, allowStudentMessaging: boolean) {
-  if (currentUser.id === recipient.id) {
-    return false;
+function getCursorOutsideSessions(events: NonNullable<NonNullable<SubjectResource["testSubmissions"]>[number]["proctorEvents"]>) {
+  const sessions: Array<{ id: string; leftAt: string; enteredAt?: string }> = [];
+  for (const event of events) {
+    if (event.type === "cursor-left-page") {
+      sessions.push({ id: event.id, leftAt: event.at });
+    }
+    if (event.type === "cursor-entered-page") {
+      const openSession = [...sessions].reverse().find((session) => !session.enteredAt);
+      if (openSession) {
+        openSession.enteredAt = event.at;
+      }
+    }
   }
-  if (currentUser.role === "student" && recipient.role === "student") {
-    return allowStudentMessaging;
-  }
-  return true;
+  return sessions;
 }
 
 function getTestTimerLabel(test: SubjectResource) {
@@ -6822,6 +7406,7 @@ function SchoolHeader({
         <a href={`/${school.id}/about`} className={currentPage === "about" ? "active" : ""}>About</a>
         <a href={`/${school.id}/for-students-and-guardians`} className={currentPage === "students" ? "active" : ""}>For students and guardians</a>
         <a href="#contact" className={currentPage === "contact" ? "active" : ""}>Contact</a>
+        <a href={`/${school.id}/schoolwork`} className="school-lms-login-button">LMS login</a>
       </nav>}
     </header>
   );
@@ -7459,6 +8044,27 @@ function formatDateTime(date: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(date));
+}
+
+function formatDateTimeWithSeconds(date: string) {
+  return new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(date));
+}
+
+function formatDuration(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.round(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
 function formatLastActive(date?: string) {
