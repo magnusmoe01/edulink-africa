@@ -1,5 +1,5 @@
-import { initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
+import { createUserWithEmailAndPassword, getAuth, signOut, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -23,6 +23,20 @@ if (hasFirebaseConfig) {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   auth = getAuth(app);
+}
+
+export async function createAuthUser(email: string, password: string): Promise<void> {
+  if (!hasFirebaseConfig) {
+    return;
+  }
+  const secondaryApp = initializeApp(firebaseConfig, `secondary-${Date.now()}`);
+  const secondaryAuth = getAuth(secondaryApp);
+  try {
+    await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    await signOut(secondaryAuth);
+  } finally {
+    await deleteApp(secondaryApp);
+  }
 }
 
 export { app, auth, db, hasFirebaseConfig };

@@ -10,7 +10,7 @@ export const sampleSchool: School = {
   address: "Kilimani Road, Nairobi",
   phone: "+254 700 123 456",
   email: "office@nairobi-community.example",
-  adminEmails: ["admin@nairobi-community.example"],
+  adminEmails: [],
   principal: "Amina Okoth",
   showWebsite: true,
   heroImage:
@@ -48,6 +48,7 @@ export const sampleSchool: School = {
       name: "Amina Okoth",
       role: "Principal",
       category: "Administration",
+      canAccessAdminPage: true,
       phone: "+254 700 123 456",
       email: "principal@nairobi-community.example",
     },

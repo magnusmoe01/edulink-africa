@@ -135,12 +135,63 @@ export async function getAdminProfile(uid: string, email?: string | null): Promi
   return {
     uid,
     email: typeof data.email === "string" ? data.email : undefined,
+    name: typeof data.name === "string" ? data.name : undefined,
     schoolIds: Array.isArray(data.schoolIds) ? data.schoolIds.filter((id): id is string => typeof id === "string") : [],
     superAdmin: data.superAdmin === true,
   };
 }
 
-export async function saveSuperAdminProfile(email: string): Promise<void> {
+export async function getSuperAdmins(): Promise<AdminProfile[]> {
+  if (!hasFirebaseConfig || !db) {
+    return [{ uid: "local", email: "local-admin@edulink.africa", name: "Local Admin", schoolIds: [], superAdmin: true }];
+  }
+  const snapshots = await getDocs(collection(db, "schoolAdmins"));
+  const all = snapshots.docs
+    .map((snapshot) => {
+      const data = snapshot.data();
+      return {
+        uid: snapshot.id,
+        email: typeof data.email === "string" ? data.email : undefined,
+        name: typeof data.name === "string" ? data.name : undefined,
+        schoolIds: Array.isArray(data.schoolIds) ? data.schoolIds.filter((id): id is string => typeof id === "string") : [],
+        superAdmin: data.superAdmin === true,
+      };
+    })
+    .filter((profile) => profile.superAdmin);
+
+  // Deduplicate: prefer uid-keyed docs over email-keyed docs (email-keyed ids start with "email-")
+  const seenEmails = new Set<string>();
+  const deduped: AdminProfile[] = [];
+  // First pass: uid-keyed docs
+  for (const profile of all) {
+    if (!profile.uid.startsWith("email-")) {
+      if (profile.email) seenEmails.add(profile.email.toLowerCase());
+      deduped.push(profile);
+    }
+  }
+  // Second pass: email-keyed docs not already covered by a uid doc
+  for (const profile of all) {
+    if (profile.uid.startsWith("email-")) {
+      const email = profile.email?.toLowerCase() ?? "";
+      if (!seenEmails.has(email)) {
+        seenEmails.add(email);
+        deduped.push(profile);
+      }
+    }
+  }
+  return deduped;
+}
+
+export async function deleteSuperAdminProfile(uid: string, email?: string): Promise<void> {
+  if (!hasFirebaseConfig || !db) return;
+  await deleteDoc(doc(db, "schoolAdmins", uid));
+  // Also remove the email-keyed shadow doc if it exists
+  if (email) {
+    await deleteDoc(doc(db, "schoolAdmins", getAdminEmailProfileId(email)));
+  }
+}
+
+export async function saveSuperAdminProfile(email: string, name?: string): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail.includes("@")) {
     throw new Error("Enter a valid email address.");
@@ -150,28 +201,60 @@ export async function saveSuperAdminProfile(email: string): Promise<void> {
     return;
   }
 
+  const docData: Record<string, unknown> = {
+    uid: getAdminEmailProfileId(normalizedEmail),
+    email: normalizedEmail,
+    schoolIds: [],
+    superAdmin: true,
+    updatedAt: new Date().toISOString(),
+    serverUpdatedAt: serverTimestamp(),
+  };
+  if (name?.trim()) {
+    docData.name = name.trim();
+  }
+
   await setDoc(
     doc(db, "schoolAdmins", getAdminEmailProfileId(normalizedEmail)),
-    {
-      uid: getAdminEmailProfileId(normalizedEmail),
-      email: normalizedEmail,
-      schoolIds: [],
-      superAdmin: true,
-      updatedAt: new Date().toISOString(),
-      serverUpdatedAt: serverTimestamp(),
-    },
+    docData,
     { merge: true },
   );
 }
 
+export async function updateSuperAdminProfile(oldEmail: string, newEmail: string, name?: string): Promise<void> {
+  const normalizedOld = oldEmail.trim().toLowerCase();
+  const normalizedNew = newEmail.trim().toLowerCase();
+  if (!normalizedNew.includes("@")) {
+    throw new Error("Enter a valid email address.");
+  }
+  if (!hasFirebaseConfig || !db) {
+    return;
+  }
+  if (normalizedOld !== normalizedNew) {
+    await deleteDoc(doc(db, "schoolAdmins", getAdminEmailProfileId(normalizedOld)));
+  }
+  const docData: Record<string, unknown> = {
+    uid: getAdminEmailProfileId(normalizedNew),
+    email: normalizedNew,
+    schoolIds: [],
+    superAdmin: true,
+    updatedAt: new Date().toISOString(),
+    serverUpdatedAt: serverTimestamp(),
+  };
+  if (name?.trim()) {
+    docData.name = name.trim();
+  }
+  await setDoc(doc(db, "schoolAdmins", getAdminEmailProfileId(normalizedNew)), docData, { merge: true });
+}
+
 export async function saveSchool(school: School): Promise<void> {
   if (!hasFirebaseConfig || !db) {
-    window.localStorage.setItem(`edulink-school-${school.id}`, JSON.stringify(school));
+    window.localStorage.setItem(`edulink-school-${school.id}`, JSON.stringify({ ...school, adminEmails: getStaffAdminEmails(school.staff ?? []) }));
     return;
   }
 
   const schoolData = removeUndefinedValues({
     ...school,
+    adminEmails: getStaffAdminEmails(school.staff ?? []),
     schoolWorkStaffEmails: (school.staff ?? []).map((member) => member.email?.toLowerCase()).filter(Boolean),
     schoolWorkStudentEmails: (school.students ?? []).map((student) => student.email?.toLowerCase()).filter(Boolean),
     updatedAt: new Date().toISOString(),
@@ -285,7 +368,7 @@ function normalizeSchool(school: School): School {
     ...sampleSchool,
     ...school,
     showWebsite: school.showWebsite ?? true,
-    adminEmails: school.adminEmails ?? [],
+    adminEmails: getStaffAdminEmails(school.staff ?? []),
     loginSettings: {
       emailPasswordEnabled: school.loginSettings?.emailPasswordEnabled ?? true,
       emailLinkEnabled: school.loginSettings?.emailLinkEnabled ?? false,
@@ -296,6 +379,8 @@ function normalizeSchool(school: School): School {
     staff: (school.staff ?? []).map((member) => ({
       ...member,
       categories: member.categories?.length ? member.categories : [member.category ?? "Other"],
+      canAccessAdminPage: member.canAccessAdminPage ?? (member.categories?.includes("Administration") || member.category === "Administration"),
+      accountDisabled: (member.canAccessAdminPage ?? (member.categories?.includes("Administration") || member.category === "Administration")) ? false : member.accountDisabled ?? false,
       visibleOnHomePage: member.visibleOnHomePage ?? true,
       visibleOnStaffPage: member.visibleOnStaffPage ?? true,
     })),
@@ -307,6 +392,7 @@ function normalizeSchool(school: School): School {
     students: (school.students ?? []).map((student) => ({
       ...student,
       email: student.email ?? "",
+      accountDisabled: student.accountDisabled ?? false,
       photoUrl: student.photoUrl ?? "",
       guardians: student.guardians ?? (student.guardianName || student.guardianEmail ? [{
         id: `guardian-${student.id}`,
@@ -334,6 +420,7 @@ function normalizeSchool(school: School): School {
       }));
     })).map((subjectClass) => ({
       ...subjectClass,
+      nameOverride: subjectClass.nameOverride ?? false,
       gradeLevelId: subjectClass.gradeLevelId ?? (school.classes ?? []).find((classGroup) => classGroup.id === subjectClass.baseClassId)?.gradeLevelId ?? getGradeLevelIdForGrade((school.classes ?? []).find((classGroup) => classGroup.id === subjectClass.baseClassId)?.grade),
       courseMaterials: subjectClass.courseMaterials ?? [],
       assignments: subjectClass.assignments ?? [],
@@ -396,6 +483,15 @@ function getGradeLevelIdForGrade(grade?: string) {
 
 function mergeUnique<T>(items: T[]): T[] {
   return Array.from(new Set(items));
+}
+
+function getStaffAdminEmails(staff: School["staff"]) {
+  return mergeUnique(
+    staff
+      .filter((member) => member.canAccessAdminPage ?? (member.categories?.includes("Administration") || member.category === "Administration"))
+      .map((member) => member.email?.trim().toLowerCase() ?? "")
+      .filter(Boolean),
+  );
 }
 
 function getAdminEmailProfileId(email: string) {

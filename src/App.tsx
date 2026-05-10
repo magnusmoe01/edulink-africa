@@ -4,10 +4,17 @@ import {
   ArrowLeft,
   Bold,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
+  ExternalLink,
+  HelpCircle,
+  LogOut,
   ClipboardCheck,
   CheckSquare,
   Clock,
+  CreditCard,
+  Eye,
+  EyeOff,
   FileText,
   Folder,
   Globe2,
@@ -38,7 +45,37 @@ import {
   UserRound,
 } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCalendarDays, faClipboardCheck, faRulerCombined, faUser } from "@fortawesome/free-solid-svg-icons";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+import {
+  faAddressBook,
+  faBook,
+  faBookOpen,
+  faCalendarDays,
+  faChalkboardUser,
+  faChartLine,
+  faCircleInfo,
+  faClipboardCheck,
+  faClipboardList,
+  faFileLines,
+  faFolder,
+  faFolderOpen,
+  faGaugeHigh,
+  faGlobe,
+  faIdCard,
+  faImage,
+  faKey,
+  faLayerGroup,
+  faLink,
+  faMessage,
+  faNewspaper,
+  faRulerCombined,
+  faScaleBalanced,
+  faSliders,
+  faTags,
+  faUser,
+  faUserGraduate,
+  faUsers,
+} from "@fortawesome/free-solid-svg-icons";
 import { SchoolChatPopup } from "./components/SchoolChatPopup";
 import { sampleSchool } from "./data/sampleSchool";
 import {
@@ -49,17 +86,19 @@ import {
   getGlobalSchoolWorkConfig,
   getLocalSchool,
   getSchool,
+  getSuperAdmins,
   listSchools,
   saveGlobalAboutConfig,
   saveGlobalSchoolWorkConfig,
   saveSchool,
   saveSuperAdminProfile,
   slugifySchoolName,
-  deleteSchool
+  deleteSchool,
+  deleteSuperAdminProfile,
+  updateSuperAdminProfile,
 } from "./lib/schools";
-import { hasFirebaseConfig } from "./lib/firebase";
-import { auth } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource, SupportTicket } from "./types";
+import { auth, createAuthUser, hasFirebaseConfig } from "./lib/firebase";
+import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, Remark, RemarkCategory, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolRemarkSettings, SchoolSubscription, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource, SubmissionFile, SupportTicket } from "./types";
 
 type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings" | "loginSettings";
 type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork" | "settings";
@@ -108,7 +147,7 @@ const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "about", label: "About" },
   { id: "news", label: "News" },
   { id: "calendar", label: "Calendar" },
-  { id: "staff", label: "Staff" },
+  { id: "staff", label: "Staff and administrators" },
   { id: "access", label: "Access" },
   { id: "grades", label: "Grades and years" },
   { id: "classes", label: "Classes" },
@@ -135,20 +174,20 @@ const editorCategories: Array<{
   {
     id: "people",
     label: "People",
-    description: "Staff members, students, access rights, guardians, and learner records.",
+    description: "Staff, administrators, students, access rights, guardians, and learner records.",
     sections: ["staff", "students", "access"],
   },
   {
     id: "academics",
     label: "Academics",
-    description: "Grades, classes, subject classes, and subject catalog.",
-    sections: ["grades", "classes", "subjectClasses", "subjects"],
+    description: "Grades, classes, subject classes, subject catalog, and assessment settings.",
+    sections: ["grades", "classes", "subjectClasses", "subjects", "schoolWorkSettings"],
   },
   {
     id: "schoolWork",
     label: "School work",
-    description: "Assessment scales, course materials, and subject class work.",
-    sections: ["schoolWorkSettings", "schoolWork"],
+    description: "Course materials and subject class work.",
+    sections: ["schoolWork"],
   },
   {
     id: "settings",
@@ -336,8 +375,19 @@ function LandingPage() {
       city: city || sampleSchool.city,
       country: country || sampleSchool.country,
       email: `office@${slug}.example`,
-      adminEmails: [normalizedEmail],
+      adminEmails: [],
       showWebsite: true,
+      staff: [{
+        name: "School administrator",
+        role: "Administrator",
+        category: "Administration",
+        categories: ["Administration"],
+        email: normalizedEmail,
+        canAccessAdminPage: true,
+        accountDisabled: false,
+        visibleOnHomePage: false,
+        visibleOnStaffPage: false,
+      }],
       gradeLevels: [],
       classes: [],
       students: [],
@@ -569,7 +619,7 @@ function LoginPage() {
   const [mode, setMode] = useState<"sign-in" | "create-account">("sign-in");
   const [status, setStatus] = useState("Sign in with your EduLink admin account.");
   const normalizedEmail = email.trim().toLowerCase();
-  const matchingSchool = schools.find((school) => school.adminEmails?.map((adminEmail) => adminEmail.toLowerCase()).includes(normalizedEmail));
+  const matchingSchool = schools.find((school) => getSchoolAdminEmails(school).includes(normalizedEmail));
   const loginSettings = matchingSchool?.loginSettings ?? { emailPasswordEnabled: true, emailLinkEnabled: false };
   const passwordLoginEnabled = !matchingSchool || loginSettings.emailPasswordEnabled;
   const emailLinkLoginEnabled = Boolean(matchingSchool && loginSettings.emailLinkEnabled);
@@ -641,7 +691,7 @@ function LoginPage() {
 
       if (authMethod === "email-link") {
         if (!emailLinkLoginEnabled) {
-          setStatus(matchingSchool ? "Email link sign-in is not enabled for this school." : "Enter a registered school admin email to use email link sign-in.");
+          setStatus(matchingSchool ? "Email link sign-in is not enabled for this school." : "Enter a staff email with admin page access to use email link sign-in.");
           return;
         }
         setStatus("Sending sign-in link...");
@@ -750,21 +800,31 @@ async function redirectSignedInUser(user: User, setStatus: (status: string) => v
   const normalizedEmail = user.email?.toLowerCase();
   if (normalizedEmail) {
     const schools = await listSchools();
-    const matchingSchool = schools.find((school) => school.adminEmails?.map((adminEmail) => adminEmail.toLowerCase()).includes(normalizedEmail));
+    const matchingSchool = schools.find((school) => getSchoolAdminEmails(school).includes(normalizedEmail));
     if (matchingSchool) {
       navigate(`/${matchingSchool.id}/admin`);
       return;
     }
 
-    const staffSchool = schools.find((school) => school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail));
+    const staffSchool = schools.find((school) => school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && !isStaffAccountDisabled(member)));
     if (staffSchool) {
       navigate(`/${staffSchool.id}/schoolwork`);
       return;
     }
 
-    const studentSchool = schools.find((school) => school.students.some((student) => student.email?.toLowerCase() === normalizedEmail));
+    if (schools.some((school) => school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && isStaffAccountDisabled(member)))) {
+      setStatus("This staff account is disabled.");
+      return;
+    }
+
+    const studentSchool = schools.find((school) => school.students.some((student) => student.email?.toLowerCase() === normalizedEmail && !student.accountDisabled));
     if (studentSchool) {
       navigate(`/${studentSchool.id}/schoolwork`);
+      return;
+    }
+
+    if (schools.some((school) => school.students.some((student) => student.email?.toLowerCase() === normalizedEmail && student.accountDisabled))) {
+      setStatus("This student account is disabled.");
       return;
     }
   }
@@ -1090,7 +1150,7 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
   const effectiveScales = getEffectiveAssessmentScales(school, globalSchoolWork);
   const selectedSubjectClass = identity?.subjectClasses.find((subjectClass) => subjectClass.id === activeSubjectClassId) ?? null;
   const isSimulating = new URLSearchParams(window.location.search).has("simulateRole");
-  const isStudentDemo = isSimulating && identity?.role === "student";
+  const simulateStudentIdParam = new URLSearchParams(window.location.search).get("simulateStudentId");
 
   const saveNextSubjectClass = async (nextSubjectClass: SubjectClass) => {
     const nextSchool = {
@@ -1105,6 +1165,16 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
       ...school,
       schoolWorkSettings: nextSettings,
     };
+    setSchool(nextSchool);
+    await saveSchool(nextSchool);
+  };
+  const saveNextRemarks = async (nextRemarks: Remark[]) => {
+    const nextSchool = { ...school, remarks: nextRemarks };
+    setSchool(nextSchool);
+    await saveSchool(nextSchool);
+  };
+  const saveNextStudent = async (student: Student) => {
+    const nextSchool = { ...school, students: school.students.map((s) => s.id === student.id ? student : s) };
     setSchool(nextSchool);
     await saveSchool(nextSchool);
   };
@@ -1132,40 +1202,116 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
   };
   const roleLabel = identity?.role ? identity.role.charAt(0).toUpperCase() + identity.role.slice(1) : "";
 
+  const portalContent = !identity ? (
+    <div className="empty-editor-state">
+      <h3>No SchoolWork access</h3>
+      <p>This account is not registered as a staff member or student at this school.</p>
+    </div>
+  ) : selectedSubjectClass ? (
+    <div className="school-work-detail-shell">
+      <SubjectClassWorkPage
+        subjectClass={selectedSubjectClass}
+        subjects={school.subjects}
+        students={school.students}
+        assessmentScales={effectiveScales}
+        globalAssessmentScales={globalSchoolWork.assessmentScales}
+        schoolWorkSettings={school.schoolWorkSettings}
+        allSubjectClasses={school.subjectClasses ?? []}
+        remarks={school.remarks ?? []}
+        remarkSettings={school.remarkSettings}
+        globalRemarkCategories={globalSchoolWork.remarkCategories ?? []}
+        accessLevel={identity.role === "student" ? "student" : identity.role === "teacher" ? "teacher" : identity.role === "viewer" ? "viewer" : "admin"}
+        activeStudentId={identity.role === "student" ? identity.studentId : undefined}
+        initialSimulatedStudentId={simulateStudentIdParam}
+        graderLabel={identity.label}
+        onBack={backToSubjectClasses}
+        onChange={saveNextSubjectClass}
+        onSchoolWorkSettingsChange={saveNextSchoolWorkSettings}
+        onRemarksChange={(nextRemarks) => void saveNextRemarks(nextRemarks)}
+      />
+    </div>
+  ) : (
+    <SchoolWorkOverview
+      subjectClasses={identity.subjectClasses}
+      subjects={school.subjects}
+      classes={school.classes}
+      students={school.students}
+      role={identity.role === "admin" ? "admin" : identity.role === "teacher" ? "teacher" : identity.role === "viewer" ? "viewer" : "student"}
+      participantLabel={identity.label}
+      remarks={school.remarks ?? []}
+      remarkSettings={school.remarkSettings}
+      globalRemarkCategories={globalSchoolWork.remarkCategories ?? []}
+      onOpen={setActiveSubjectClassId}
+      onRemarksChange={(nextRemarks) => void saveNextRemarks(nextRemarks)}
+      onStudentChange={(student) => void saveNextStudent(student)}
+    />
+  );
+
+  if (isSimulating) {
+    return (
+      <main className="admin-page">
+        <header className="admin-shell-header">
+          <button className="brand-button" type="button" onClick={exitSimulation}>
+            <GraduationCap size={28} />
+            <span>{school.name}</span>
+          </button>
+          <div className="admin-actions">
+            <span className="simulation-role-badge">Simulating as {identity?.label ?? "student"}</span>
+            <button className="secondary-action admin-chat-button" type="button" onClick={() => setChatOpen(true)} aria-label="Open messages">
+              <MessageCircle size={18} />
+            </button>
+            <button className="secondary-action" type="button" onClick={exitSimulation}>Exit simulation</button>
+          </div>
+        </header>
+        {identity && chatOpen ? (
+          <SchoolChatPopup
+            school={school}
+            identity={identity}
+            messages={school.chatMessages ?? []}
+            onClose={() => setChatOpen(false)}
+            onMessagesChange={(messages) => void saveNextChatMessages(messages)}
+          />
+        ) : null}
+        <div className="school-editor">
+          <div className="editor-grid">
+            {portalContent}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="school-page">
-      {isStudentDemo ? null : (
-        <SchoolHeader
-          school={school}
-          currentPage="students"
-          hideNav={Boolean(identity)}
-          actions={identity ? (
-            <div className="school-header-session">
-              <button className="school-account-button chat-icon-button" type="button" onClick={() => setChatOpen(true)} aria-label="Open messages">
-                <MessageCircle size={19} />
+      <SchoolHeader
+        school={school}
+        currentPage="students"
+        hideNav={Boolean(identity)}
+        actions={identity ? (
+          <div className="school-header-session">
+            <button className="school-account-button chat-icon-button" type="button" onClick={() => setChatOpen(true)} aria-label="Open messages">
+              <MessageCircle size={19} />
+            </button>
+            <div className="school-account-menu" ref={accountMenuRef}>
+              <button
+                className="school-account-button"
+                type="button"
+                onClick={() => setAccountMenuOpen((open) => !open)}
+                aria-expanded={accountMenuOpen}
+                aria-haspopup="menu"
+              >
+                <FontAwesomeIcon icon={faUser} />
+                <span>{identity.label}</span>
               </button>
-              <div className="school-account-menu" ref={accountMenuRef}>
-                <button
-                  className="school-account-button"
-                  type="button"
-                  onClick={() => setAccountMenuOpen((open) => !open)}
-                  aria-expanded={accountMenuOpen}
-                  aria-haspopup="menu"
-                >
-                  <FontAwesomeIcon icon={faUser} />
-                  <span>{identity.label}</span>
-                </button>
-                {accountMenuOpen ? (
-                  <div className="school-account-dropdown" role="menu">
-                    {isSimulating ? <button type="button" role="menuitem" onClick={exitSimulation}>Exit simulation</button> : null}
-                    {hasFirebaseConfig && user ? <button type="button" role="menuitem" onClick={() => void logout()}>Sign out</button> : null}
-                  </div>
-                ) : null}
-              </div>
+              {accountMenuOpen ? (
+                <div className="school-account-dropdown" role="menu">
+                  {hasFirebaseConfig && user ? <button type="button" role="menuitem" onClick={() => void logout()}>Sign out</button> : null}
+                </div>
+              ) : null}
             </div>
-          ) : undefined}
-        />
-      )}
+          </div>
+        ) : undefined}
+      />
       {identity && chatOpen ? (
         <SchoolChatPopup
           school={school}
@@ -1175,52 +1321,24 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
           onMessagesChange={(messages) => void saveNextChatMessages(messages)}
         />
       ) : null}
-      <section className="school-work-portal">
-        {!identity || identity.role !== "student" ? <div className="portal-heading">
-          <div>
-            <h1>{school.name}</h1>
-            <p>{identity ? `${identity.label} · ${roleLabel}` : "Sign in with a staff or student account to view SchoolWork."}</p>
+      <div className="school-editor">
+        {!identity || identity.role !== "student" ? (
+          <div className="portal-heading">
+            <div>
+              <h1>{school.name}</h1>
+              <p>{identity ? `${identity.label} · ${roleLabel}` : "Sign in with a staff or student account to view SchoolWork."}</p>
+            </div>
+            {hasFirebaseConfig ? (
+              user ? <button className="secondary-action" type="button" onClick={() => void logout()}>Sign out</button> : (
+                <button className="primary-action" type="button" onClick={() => navigate("/login")}>Login</button>
+              )
+            ) : null}
           </div>
-          {isSimulating ? (
-            <button className="secondary-action" type="button" onClick={exitSimulation}>Sign out</button>
-          ) : hasFirebaseConfig ? (
-            user ? <button className="secondary-action" type="button" onClick={() => void logout()}>Sign out</button> : (
-              <button className="primary-action" type="button" onClick={() => navigate("/login")}>Login</button>
-            )
-          ) : null}
-        </div> : null}
-        {!identity ? (
-          <div className="empty-editor-state">
-            <h3>No SchoolWork access</h3>
-            <p>This account is not registered as a staff member or student at this school.</p>
-          </div>
-        ) : selectedSubjectClass ? (
-          <SubjectClassWorkPage
-            subjectClass={selectedSubjectClass}
-            subjects={school.subjects}
-            students={school.students}
-            assessmentScales={effectiveScales}
-            globalAssessmentScales={globalSchoolWork.assessmentScales}
-            schoolWorkSettings={school.schoolWorkSettings}
-            accessLevel={identity.role === "student" ? "student" : identity.role === "teacher" ? "teacher" : identity.role === "viewer" ? "viewer" : "admin"}
-            activeStudentId={identity.role === "student" ? identity.studentId : undefined}
-            graderLabel={identity.label}
-            onBack={backToSubjectClasses}
-            onChange={saveNextSubjectClass}
-            onSchoolWorkSettingsChange={saveNextSchoolWorkSettings}
-          />
-        ) : (
-          <SchoolWorkOverview
-            subjectClasses={identity.subjectClasses}
-            subjects={school.subjects}
-            classes={school.classes}
-            students={school.students}
-            role={identity.role === "admin" ? "admin" : identity.role === "teacher" ? "teacher" : identity.role === "viewer" ? "viewer" : "student"}
-            participantLabel={identity.label}
-            onOpen={setActiveSubjectClassId}
-          />
-        )}
-      </section>
+        ) : null}
+        <div className="editor-grid">
+          {portalContent}
+        </div>
+      </div>
     </main>
   );
 }
@@ -1435,7 +1553,10 @@ function AdminPage({ schoolId }: { schoolId: string }) {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [supportTab, setSupportTab] = useState<"new" | "tickets">("new");
   const [draftSupportTicket, setDraftSupportTicket] = useState<Pick<SupportTicket, "subject" | "message">>({ subject: "", message: "" });
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void Promise.all([getSchool(schoolId), getGlobalAboutConfig(), getGlobalSchoolWorkConfig()]).then(([remoteSchool, nextGlobalAbout, nextGlobalSchoolWork]) => {
@@ -1481,6 +1602,17 @@ function AdminPage({ schoolId }: { schoolId: string }) {
       });
     });
   }, [schoolId]);
+
+  useEffect(() => {
+    if (!userMenuOpen) return undefined;
+    const close = (event: PointerEvent) => {
+      if (userMenuRef.current?.contains(event.target as Node)) return;
+      setUserMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [userMenuOpen]);
+
   useSchoolDocumentBrand(adminUser ? school : null);
 
   const submit = async () => {
@@ -1547,14 +1679,17 @@ function AdminPage({ schoolId }: { schoolId: string }) {
     setEditorHash(category, section);
   };
   const simulateSchoolWorkUser = (role: "staff" | "student", id: string) => {
-    const params = new URLSearchParams({ simulateRole: role, simulateId: id });
     if (role === "student") {
       const firstSubjectClass = (school.subjectClasses ?? []).find((subjectClass) => subjectClass.studentIds.includes(id));
+      const params = new URLSearchParams({ simulateRole: "admin", simulateStudentId: id });
       if (firstSubjectClass) {
         params.set("subjectClassId", firstSubjectClass.id);
       }
+      navigate(`/${school.id}/schoolwork?${params.toString()}`);
+    } else {
+      const params = new URLSearchParams({ simulateRole: role, simulateId: id });
+      navigate(`/${school.id}/schoolwork?${params.toString()}`);
     }
-    navigate(`/${school.id}/schoolwork?${params.toString()}`);
   };
 
   return (
@@ -1569,9 +1704,11 @@ function AdminPage({ schoolId }: { schoolId: string }) {
             <MessageCircle size={18} />
           </button>
           <button className="secondary-action" onClick={() => openInNewTab(`/${school.id}`)}>
-            View page
+            <ExternalLink size={15} />
+            View website
           </button>
-          <button className="secondary-action" onClick={() => setSupportOpen(true)}>
+          <button className="secondary-action" onClick={() => { setSupportTab("new"); setSupportOpen(true); }}>
+            <HelpCircle size={15} />
             Support
           </button>
           {!adminUser ? (
@@ -1580,9 +1717,21 @@ function AdminPage({ schoolId }: { schoolId: string }) {
             </button>
           ) : null}
           {hasFirebaseConfig && adminUser ? (
-            <button className="secondary-action" onClick={() => void logout()}>
-              Sign out
-            </button>
+            <div className="admin-user-menu" ref={userMenuRef}>
+              <button className="secondary-action admin-user-menu-trigger" onClick={() => setUserMenuOpen((o) => !o)}>
+                <UserRound size={15} />
+                <span className="admin-user-menu-label">{profile?.name ?? adminUser.email}</span>
+                <ChevronDown size={13} />
+              </button>
+              {userMenuOpen ? (
+                <div className="admin-user-menu-dropdown" role="menu">
+                  <button role="menuitem" onClick={() => { setUserMenuOpen(false); void logout(); }}>
+                    <LogOut size={14} />
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {saveStatus ? <span className="admin-save-status">{saveStatus}</span> : null}
         </div>
@@ -1597,24 +1746,102 @@ function AdminPage({ schoolId }: { schoolId: string }) {
         />
       ) : null}
       {supportOpen ? (
-        <RegistrationModal
-          title="Raise support ticket"
-          eyebrow="Support"
-          submitLabel="Send ticket"
-          onClose={() => setSupportOpen(false)}
-          onSubmit={() => void submitSupportTicket()}
-        >
-          <TextInput
-            label="Subject"
-            value={draftSupportTicket.subject}
-            onChange={(subject) => setDraftSupportTicket((current) => ({ ...current, subject }))}
-          />
-          <TextArea
-            label="Message"
-            value={draftSupportTicket.message}
-            onChange={(message) => setDraftSupportTicket((current) => ({ ...current, message }))}
-          />
-        </RegistrationModal>
+        <div className="modal-backdrop" role="presentation">
+          <section className="staff-modal support-staff-modal" role="dialog" aria-modal="true" aria-labelledby="support-modal-title">
+            <div className="staff-modal-header">
+              <div>
+                <p className="eyebrow">Support</p>
+                <h2 id="support-modal-title">Support</h2>
+              </div>
+            </div>
+            <div className="support-modal-tabs">
+              <button
+                className={`support-modal-tab${supportTab === "new" ? " support-modal-tab-active" : ""}`}
+                type="button"
+                onClick={() => setSupportTab("new")}
+              >
+                New ticket
+              </button>
+              <button
+                className={`support-modal-tab${supportTab === "tickets" ? " support-modal-tab-active" : ""}`}
+                type="button"
+                onClick={() => setSupportTab("tickets")}
+              >
+                My tickets
+                {(school.supportTickets ?? []).length > 0 ? (
+                  <span className="support-tab-count">{(school.supportTickets ?? []).length}</span>
+                ) : null}
+              </button>
+            </div>
+            {supportTab === "new" ? (
+              <>
+                <div className="staff-modal-body">
+                  <TextInput
+                    label="Subject"
+                    value={draftSupportTicket.subject}
+                    onChange={(subject) => setDraftSupportTicket((current) => ({ ...current, subject }))}
+                  />
+                  <TextArea
+                    label="Message"
+                    value={draftSupportTicket.message}
+                    onChange={(message) => setDraftSupportTicket((current) => ({ ...current, message }))}
+                  />
+                </div>
+                <div className="staff-modal-actions">
+                  <button className="secondary-action" type="button" onClick={() => setSupportOpen(false)}>
+                    Cancel
+                  </button>
+                  <button className="primary-action" type="button" onClick={() => void submitSupportTicket()}>
+                    Send ticket
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="staff-modal-body">
+                  {(school.supportTickets ?? []).length === 0 ? (
+                    <div className="empty-editor-state">
+                      <h3>No tickets yet</h3>
+                      <p>Tickets you raise will appear here with their status and any responses.</p>
+                    </div>
+                  ) : (
+                    <div className="support-ticket-list">
+                      {[...(school.supportTickets ?? [])]
+                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        .map((ticket) => (
+                          <article className="support-ticket-card" key={ticket.id}>
+                            <div className="support-ticket-heading">
+                              <div>
+                                <h3>{ticket.subject}</h3>
+                                <span>{formatDateTime(ticket.createdAt)}</span>
+                              </div>
+                              <span className={`support-ticket-status-badge support-ticket-status-badge-${ticket.status}`}>
+                                {ticket.status === "open" ? "Open" : ticket.status === "in-progress" ? "In progress" : "Resolved"}
+                              </span>
+                            </div>
+                            <p>{ticket.message}</p>
+                            {ticket.response ? (
+                              <p className="support-ticket-response">
+                                <strong>Response:</strong> {ticket.response}
+                              </p>
+                            ) : null}
+                          </article>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                <div className="staff-modal-actions">
+                  <button className="secondary-action" type="button" onClick={() => setSupportOpen(false)}>
+                    Close
+                  </button>
+                  <button className="primary-action" type="button" onClick={() => setSupportTab("new")}>
+                    New ticket
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
       ) : null}
 
       <section className={`admin-layout ${isSchoolWorkAdminView && !adminSidebarOpen ? "admin-layout-sidebar-collapsed" : ""}`}>
@@ -1693,10 +1920,29 @@ function SuperAdminPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
   const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
-  const [superAdminView, setSuperAdminView] = useState<"schools" | "supportTickets" | "globalPages" | "schoolWorkSettings" | "superAdmins">("schools");
+  const [superAdminView, setSuperAdminView] = useState<"schools" | "supportTickets" | "globalPages" | "schoolWorkSettings" | "superAdmins" | "subscriptions">("schools");
   const [query, setQuery] = useState("");
   const [newSuperAdminEmail, setNewSuperAdminEmail] = useState("");
+  const [newSuperAdminName, setNewSuperAdminName] = useState("");
+  const [newSuperAdminPassword, setNewSuperAdminPassword] = useState("");
+  const [superAdmins, setSuperAdmins] = useState<AdminProfile[]>([]);
+  const [editingSuperAdminUid, setEditingSuperAdminUid] = useState<string | null>(null);
+  const [editSuperAdminDraft, setEditSuperAdminDraft] = useState<{ name: string; email: string }>({ name: "", email: "" });
+  const [editingSchoolUrlId, setEditingSchoolUrlId] = useState<string | null>(null);
+  const [schoolUrlDraft, setSchoolUrlDraft] = useState("");
   const [status, setStatus] = useState("Loading...");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!userMenuOpen) return undefined;
+    const close = (event: PointerEvent) => {
+      if (userMenuRef.current?.contains(event.target as Node)) return;
+      setUserMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [userMenuOpen]);
 
   useEffect(() => {
     if (!hasFirebaseConfig || !auth) {
@@ -1704,6 +1950,7 @@ function SuperAdminPage() {
       void refreshSchools(setSchools, setStatus);
       void getGlobalAboutConfig().then(setGlobalAbout);
       void getGlobalSchoolWorkConfig().then(setGlobalSchoolWork);
+      void getSuperAdmins().then(setSuperAdmins);
       return undefined;
     }
 
@@ -1724,6 +1971,7 @@ function SuperAdminPage() {
         void refreshSchools(setSchools, setStatus);
         void getGlobalAboutConfig().then(setGlobalAbout);
         void getGlobalSchoolWorkConfig().then(setGlobalSchoolWork);
+        void getSuperAdmins().then(setSuperAdmins);
       });
     });
   }, []);
@@ -1788,15 +2036,99 @@ function SuperAdminPage() {
       return;
     }
 
+    const password = newSuperAdminPassword.trim();
+    if (password && password.length < 6) {
+      setStatus("Password must be at least 6 characters");
+      return;
+    }
+
     setStatus(`Adding ${normalizedEmail} as superadmin...`);
     try {
-      await saveSuperAdminProfile(normalizedEmail);
+      if (password) {
+        await createAuthUser(normalizedEmail, password);
+      }
+      await saveSuperAdminProfile(normalizedEmail, newSuperAdminName.trim() || undefined);
       setNewSuperAdminEmail("");
-      setStatus(`${normalizedEmail} can now sign in as a superadmin`);
+      setNewSuperAdminName("");
+      setNewSuperAdminPassword("");
+      const nextAdmins = await getSuperAdmins();
+      setSuperAdmins(nextAdmins);
+      setStatus(`${normalizedEmail} added as superadmin`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not add superadmin");
     }
   };
+
+  const startEditSuperAdmin = (admin: AdminProfile) => {
+    setEditingSuperAdminUid(admin.uid);
+    setEditSuperAdminDraft({ name: admin.name ?? "", email: admin.email ?? "" });
+  };
+
+  const startEditSchoolUrl = (school: School) => {
+    setEditingSchoolUrlId(school.id);
+    setSchoolUrlDraft(school.id);
+  };
+
+  const saveSchoolUrl = async (school: School) => {
+    if (hasFirebaseConfig && !profile?.superAdmin) {
+      setStatus("Only superadmins can update school URLs");
+      return;
+    }
+    const nextId = slugifySchoolName(schoolUrlDraft);
+    if (!nextId) {
+      setStatus("Enter a valid URL slug");
+      return;
+    }
+    if (nextId === school.id) {
+      setEditingSchoolUrlId(null);
+      return;
+    }
+    if (schools.some((item) => item.id === nextId)) {
+      setStatus(`/${nextId} is already used by another school`);
+      return;
+    }
+    setStatus(`Updating ${school.name} URL...`);
+    try {
+      await saveSchool({ ...school, id: nextId });
+      await deleteSchool(school.id);
+      setEditingSchoolUrlId(null);
+      setSchoolUrlDraft("");
+      await refreshSchools(setSchools, setStatus);
+      setStatus(`School URL updated to /${nextId}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update school URL");
+    }
+  };
+
+  const saveSuperAdminEdit = async (oldEmail: string) => {
+    const newEmail = editSuperAdminDraft.email.trim().toLowerCase();
+    if (!newEmail.includes("@")) {
+      setStatus("Enter a valid email address");
+      return;
+    }
+    setStatus("Saving...");
+    try {
+      await updateSuperAdminProfile(oldEmail, newEmail, editSuperAdminDraft.name);
+      setEditingSuperAdminUid(null);
+      setSuperAdmins(await getSuperAdmins());
+      setStatus("Superadmin updated");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update superadmin");
+    }
+  };
+
+  const removeSuperAdmin = async (admin: AdminProfile) => {
+    if (!window.confirm(`Remove ${admin.name ?? admin.email} as superadmin? This cannot be undone.`)) return;
+    setStatus("Removing superadmin...");
+    try {
+      await deleteSuperAdminProfile(admin.uid, admin.email);
+      setSuperAdmins(await getSuperAdmins());
+      setStatus("Superadmin removed");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not remove superadmin");
+    }
+  };
+
   const updateSupportTicket = async (schoolId: string, ticketId: string, patch: Partial<SupportTicket>) => {
     if (hasFirebaseConfig && !profile?.superAdmin) {
       setStatus("Only superadmins can update support tickets");
@@ -1817,6 +2149,13 @@ function SuperAdminPage() {
     };
     setStatus("Updating support ticket...");
     await saveSchool(nextSchool);
+    await refreshSchools(setSchools, setStatus);
+  };
+
+  const updateSubscription = async (schoolId: string, subscription: SchoolSubscription) => {
+    const school = schools.find((item) => item.id === schoolId);
+    if (!school) return;
+    await saveSchool({ ...school, subscription });
     await refreshSchools(setSchools, setStatus);
   };
 
@@ -1841,9 +2180,21 @@ function SuperAdminPage() {
             </button>
           ) : null}
           {adminUser ? (
-            <button className="secondary-action" onClick={() => void logout()}>
-              Sign out
-            </button>
+            <div className="admin-user-menu" ref={userMenuRef}>
+              <button className="secondary-action admin-user-menu-trigger" onClick={() => setUserMenuOpen((o) => !o)}>
+                <UserRound size={15} />
+                <span className="admin-user-menu-label">{profile?.name ?? adminUser.email}</span>
+                <ChevronDown size={13} />
+              </button>
+              {userMenuOpen ? (
+                <div className="admin-user-menu-dropdown" role="menu">
+                  <button role="menuitem" onClick={() => { setUserMenuOpen(false); void logout(); }}>
+                    <LogOut size={14} />
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </header>
@@ -1863,7 +2214,7 @@ function SuperAdminPage() {
           </div>
           <div className="status-box">
             <span>Signed in</span>
-            <strong>{adminUser?.email ?? profile?.email ?? "Not signed in"}</strong>
+            <strong>{profile?.name ?? adminUser?.email ?? profile?.email ?? "Not signed in"}</strong>
           </div>
           <nav className="superadmin-nav" aria-label="Superadmin sections">
             <button
@@ -1906,6 +2257,14 @@ function SuperAdminPage() {
               <ShieldCheck size={18} />
               Superadmins
             </button>
+            <button
+              className={superAdminView === "subscriptions" ? "active-superadmin-nav" : ""}
+              type="button"
+              onClick={() => setSuperAdminView("subscriptions")}
+            >
+              <CreditCard size={18} />
+              Subscriptions
+            </button>
           </nav>
         </aside>
 
@@ -1916,15 +2275,58 @@ function SuperAdminPage() {
             <GlobalSchoolWorkEditor config={globalSchoolWork} onChange={setGlobalSchoolWork} onSubmit={saveGlobalSchoolWork} />
           ) : superAdminView === "supportTickets" ? (
             <SupportTicketsPanel schools={schools} onUpdateTicket={(schoolId, ticketId, patch) => void updateSupportTicket(schoolId, ticketId, patch)} />
+          ) : superAdminView === "subscriptions" ? (
+            <SubscriptionsPanel schools={schools} onUpdate={updateSubscription} />
           ) : superAdminView === "superAdmins" ? (
             <EditorPanel title="Superadmins">
+              {superAdmins.length > 0 ? (
+                <div className="data-table-wrap">
+                  <table className="data-table access-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {superAdmins.map((admin) => (
+                        <tr key={admin.uid}>
+                          {editingSuperAdminUid === admin.uid ? (
+                            <>
+                              <td><input className="inline-table-input" value={editSuperAdminDraft.name} onChange={(e) => setEditSuperAdminDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Name" /></td>
+                              <td><input className="inline-table-input" value={editSuperAdminDraft.email} onChange={(e) => setEditSuperAdminDraft((d) => ({ ...d, email: e.target.value }))} placeholder="Email" /></td>
+                              <td className="table-actions-cell">
+                                <button className="secondary-action" type="button" onClick={() => void saveSuperAdminEdit(admin.email ?? "")}>Save</button>
+                                <button className="remove-button" type="button" onClick={() => setEditingSuperAdminUid(null)}>Cancel</button>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td><strong>{admin.name ?? "—"}</strong></td>
+                              <td>{admin.email ?? "—"}</td>
+                              <td className="table-actions-cell">
+                                <button className="secondary-action" type="button" onClick={() => startEditSuperAdmin(admin)}>Edit</button>
+                                <button className="remove-button" type="button" onClick={() => void removeSuperAdmin(admin)}>Remove</button>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
               <div className="panel-heading global-about-heading">
                 <div>
-                  <p>Add another platform superadmin by email. They must sign in with this exact email address.</p>
+                  <p className="eyebrow">Add superadmin</p>
+                  <p>They will be able to sign in with this email. Optionally set an initial password — otherwise they can create one via the login page.</p>
                 </div>
               </div>
               <div className="create-school-box superadmin-add-box">
-                <TextInput label="Superadmin email" value={newSuperAdminEmail} onChange={setNewSuperAdminEmail} />
+                <TextInput label="Name" value={newSuperAdminName} onChange={setNewSuperAdminName} />
+                <TextInput label="Email" value={newSuperAdminEmail} onChange={setNewSuperAdminEmail} />
+                <TextInput label="Password (optional)" value={newSuperAdminPassword} onChange={setNewSuperAdminPassword} />
                 <button className="primary-action" type="button" onClick={() => void addSuperAdmin()}>
                   Add superadmin
                 </button>
@@ -1952,17 +2354,31 @@ function SuperAdminPage() {
                   <article className="school-directory-row" key={school.id}>
                     <div className="school-directory-main">
                       <span className="school-directory-icon">
-                        <SchoolIcon size={22} />
+                        {school.logoUrl ? (
+                          <img src={school.logoUrl} alt={school.name} className="school-directory-logo" />
+                        ) : (
+                          <SchoolIcon size={22} />
+                        )}
                       </span>
                       <div>
                         <h3>{school.name}</h3>
-                        <p>{school.type}</p>
-                        <span>/{school.id}</span>
+                        {editingSchoolUrlId === school.id ? (
+                          <span className="school-directory-url-edit">
+                            /
+                            <input
+                              value={schoolUrlDraft}
+                              onChange={(event) => setSchoolUrlDraft(slugifySchoolName(event.target.value))}
+                              aria-label={`URL slug for ${school.name}`}
+                            />
+                          </span>
+                        ) : (
+                          <span>/{school.id}</span>
+                        )}
                       </div>
                     </div>
                     <div className="school-directory-meta">
                       <span>{school.city}, {school.country}</span>
-                      <span>{school.adminEmails.length ? school.adminEmails.join(", ") : "No admin email"}</span>
+                      <span>{school.staff.length} {school.staff.length === 1 ? "staff member" : "staff"} · {school.students.length} {school.students.length === 1 ? "student" : "students"}</span>
                     </div>
                     <div className="school-directory-actions">
                       <button className="secondary-action" type="button" onClick={() => openInNewTab(`/${school.id}`)}>
@@ -1973,6 +2389,20 @@ function SuperAdminPage() {
                         <LayoutDashboard size={18} />
                         Simulate admin
                       </button>
+                      {editingSchoolUrlId === school.id ? (
+                        <>
+                          <button className="secondary-action" type="button" onClick={() => void saveSchoolUrl(school)}>
+                            Save URL
+                          </button>
+                          <button className="remove-button" type="button" onClick={() => setEditingSchoolUrlId(null)}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button className="secondary-action" type="button" onClick={() => startEditSchoolUrl(school)}>
+                          Edit URL
+                        </button>
+                      )}
                       <button
                         className="remove-button"
                         type="button"
@@ -2008,7 +2438,11 @@ function SupportTicketsPanel({
   const tickets = schools
     .flatMap((school) => (school.supportTickets ?? []).map((ticket) => ({ school, ticket })))
     .sort((first, second) => new Date(second.ticket.createdAt).getTime() - new Date(first.ticket.createdAt).getTime());
+  const [openTicketKey, setOpenTicketKey] = useState<string | null>(null);
   const [draftResponses, setDraftResponses] = useState<Record<string, string>>({});
+
+  const statusLabel = (status: SupportTicket["status"]) =>
+    status === "open" ? "Open" : status === "in-progress" ? "In progress" : "Resolved";
 
   return (
     <EditorPanel title="Support tickets">
@@ -2018,54 +2452,201 @@ function SupportTicketsPanel({
           <p>Tickets raised by school admins will appear here.</p>
         </div>
       ) : (
-        <div className="support-ticket-list">
+        <div className="support-ticket-table">
           {tickets.map(({ school, ticket }) => {
             const draftKey = `${school.id}:${ticket.id}`;
+            const isOpen = openTicketKey === draftKey;
             const responseDraft = draftResponses[draftKey] ?? ticket.response ?? "";
             return (
-              <article className="support-ticket-card" key={draftKey}>
-                <div className="support-ticket-heading">
-                  <div>
-                    <p className="eyebrow">{school.name}</p>
-                    <h3>{ticket.subject}</h3>
-                    <span>{ticket.createdBy || "School admin"} · {formatDateTime(ticket.createdAt)}</span>
+              <article key={draftKey} className={`support-ticket-row${isOpen ? " support-ticket-row--open" : ""}`}>
+                <button
+                  className="support-ticket-row-summary"
+                  type="button"
+                  onClick={() => setOpenTicketKey(isOpen ? null : draftKey)}
+                  aria-expanded={isOpen}
+                >
+                  <span className={`support-ticket-status-dot support-ticket-status-dot--${ticket.status}`} />
+                  <span className="support-ticket-subject">{ticket.subject}</span>
+                  <span className="support-ticket-school">{school.name}</span>
+                  <span className="support-ticket-status-label">{statusLabel(ticket.status)}</span>
+                  <span className="support-ticket-time">{formatDateTime(ticket.createdAt)}</span>
+                  <ChevronRight size={16} className={`support-ticket-chevron${isOpen ? " support-ticket-chevron--open" : ""}`} />
+                </button>
+                {isOpen ? (
+                  <div className="support-ticket-detail">
+                    <div className="support-ticket-meta">
+                      <span>{ticket.createdBy || "School admin"}</span>
+                      <label className="field-label support-ticket-status">
+                        Status
+                        <select
+                          value={ticket.status}
+                          onChange={(event) => onUpdateTicket(school.id, ticket.id, { status: event.target.value as SupportTicket["status"] })}
+                        >
+                          <option value="open">Open</option>
+                          <option value="in-progress">In progress</option>
+                          <option value="resolved">Resolved</option>
+                        </select>
+                      </label>
+                    </div>
+                    <p className="support-ticket-message">{ticket.message}</p>
+                    {ticket.response ? <p className="support-ticket-response"><strong>Previous response:</strong> {ticket.response}</p> : null}
+                    <TextArea
+                      label="Response note"
+                      value={responseDraft}
+                      onChange={(response) => setDraftResponses((current) => ({ ...current, [draftKey]: response }))}
+                    />
+                    <div className="support-ticket-actions">
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        onClick={() => onUpdateTicket(school.id, ticket.id, { response: responseDraft.trim() || undefined })}
+                      >
+                        Save response
+                      </button>
+                      <button className="secondary-action" type="button" onClick={() => navigate(`/${school.id}/admin`)}>
+                        Open admin
+                      </button>
+                    </div>
                   </div>
-                  <label className="field-label support-ticket-status">
-                    Status
-                    <select
-                      value={ticket.status}
-                      onChange={(event) => onUpdateTicket(school.id, ticket.id, { status: event.target.value as SupportTicket["status"] })}
-                    >
-                      <option value="open">Open</option>
-                      <option value="in-progress">In progress</option>
-                      <option value="resolved">Resolved</option>
-                    </select>
-                  </label>
-                </div>
-                <p>{ticket.message}</p>
-                {ticket.response ? <p className="support-ticket-response"><strong>Response:</strong> {ticket.response}</p> : null}
-                <TextArea
-                  label="Response note"
-                  value={responseDraft}
-                  onChange={(response) => setDraftResponses((current) => ({ ...current, [draftKey]: response }))}
-                />
-                <div className="support-ticket-actions">
-                  <button
-                    className="secondary-action"
-                    type="button"
-                    onClick={() => onUpdateTicket(school.id, ticket.id, { response: responseDraft.trim() || undefined })}
-                  >
-                    Save response
-                  </button>
-                  <button className="secondary-action" type="button" onClick={() => navigate(`/${school.id}/admin`)}>
-                    Open admin
-                  </button>
-                </div>
+                ) : null}
               </article>
             );
           })}
         </div>
       )}
+    </EditorPanel>
+  );
+}
+
+function SubscriptionsPanel({
+  schools,
+  onUpdate,
+}: {
+  schools: School[];
+  onUpdate: (schoolId: string, subscription: SchoolSubscription) => Promise<void>;
+}) {
+  const freeCount = schools.filter((s) => !s.subscription || s.subscription.plan === "free").length;
+  const paidCount = schools.filter((s) => s.subscription?.plan === "per-student").length;
+  const totalRevenue = schools.reduce((sum, s) => {
+    if (s.subscription?.plan === "per-student" && s.subscription.pricePerStudent) {
+      return sum + s.students.length * s.subscription.pricePerStudent;
+    }
+    return sum;
+  }, 0);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [draftPrices, setDraftPrices] = useState<Record<string, string>>({});
+
+  const save = async (schoolId: string, subscription: SchoolSubscription) => {
+    setSavingIds((prev) => new Set([...prev, schoolId]));
+    try {
+      await onUpdate(schoolId, subscription);
+    } finally {
+      setSavingIds((prev) => { const next = new Set(prev); next.delete(schoolId); return next; });
+    }
+  };
+
+  return (
+    <EditorPanel title="Subscriptions">
+      <div className="subscription-summary-grid">
+        <div className="subscription-summary-card">
+          <span className="subscription-summary-label">Free plan</span>
+          <strong className="subscription-summary-value">{freeCount}</strong>
+          <span className="subscription-summary-sub">schools</span>
+        </div>
+        <div className="subscription-summary-card">
+          <span className="subscription-summary-label">Pay per student</span>
+          <strong className="subscription-summary-value">{paidCount}</strong>
+          <span className="subscription-summary-sub">schools</span>
+        </div>
+        <div className="subscription-summary-card subscription-summary-revenue">
+          <span className="subscription-summary-label">Monthly revenue</span>
+          <strong className="subscription-summary-value">KES {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          <span className="subscription-summary-sub">estimated</span>
+        </div>
+      </div>
+      <div className="data-table-wrap">
+        <table className="data-table subscription-table">
+          <thead>
+            <tr>
+              <th>School</th>
+              <th>Students</th>
+              <th>Plan</th>
+              <th>Price / student</th>
+              <th>Monthly total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {schools.map((school) => {
+              const sub = school.subscription ?? { plan: "free" as const };
+              const isPaid = sub.plan === "per-student";
+              const monthly = isPaid && sub.pricePerStudent ? school.students.length * sub.pricePerStudent : 0;
+              const isSaving = savingIds.has(school.id);
+              const draftPrice = draftPrices[school.id] ?? String(sub.pricePerStudent ?? "");
+              return (
+                <tr key={school.id} className={isSaving ? "subscription-row-saving" : ""}>
+                  <td>
+                    <div>
+                      <strong>{school.name}</strong>
+                      <small className="subscription-school-id">/{school.id}</small>
+                    </div>
+                  </td>
+                  <td>{school.students.length}</td>
+                  <td>
+                    <select
+                      className="subscription-plan-select"
+                      value={sub.plan}
+                      disabled={isSaving}
+                      onChange={(e) => {
+                        const plan = e.target.value as "free" | "per-student";
+                        void save(school.id, { ...sub, plan });
+                      }}
+                    >
+                      <option value="free">Free</option>
+                      <option value="per-student">Pay per student</option>
+                    </select>
+                  </td>
+                  <td>
+                    {isPaid ? (
+                      <div className="subscription-price-input-wrap">
+                        <span className="subscription-currency">KES</span>
+                        <input
+                          className="subscription-price-input"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={draftPrice}
+                          placeholder="0.00"
+                          disabled={isSaving}
+                          onChange={(e) => setDraftPrices((prev) => ({ ...prev, [school.id]: e.target.value }))}
+                          onBlur={(e) => {
+                            const price = parseFloat(e.target.value) || 0;
+                            setDraftPrices((prev) => { const next = { ...prev }; delete next[school.id]; return next; });
+                            void save(school.id, { ...sub, pricePerStudent: price });
+                          }}
+                        />
+                        <span className="subscription-per-label">/ student</span>
+                      </div>
+                    ) : (
+                      <span className="subscription-na">—</span>
+                    )}
+                  </td>
+                  <td>
+                    {isPaid ? (
+                      <strong className="subscription-monthly-total">KES {monthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                    ) : (
+                      <span className="subscription-na">—</span>
+                    )}
+                  </td>
+                  <td className="subscription-saving-cell">
+                    {isSaving ? <span className="subscription-saving-spinner" aria-label="Saving…" /> : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </EditorPanel>
   );
 }
@@ -2180,6 +2761,11 @@ function GlobalAboutEditor({
   );
 }
 
+const REMARK_PARENTS: RemarkCategory[] = [
+  { id: "conduct", name: "Conduct" },
+  { id: "behavior", name: "Behavior" },
+];
+
 function GlobalSchoolWorkEditor({
   config,
   onChange,
@@ -2189,7 +2775,9 @@ function GlobalSchoolWorkEditor({
   onChange: (config: GlobalSchoolWorkConfig) => void;
   onSubmit: () => Promise<void>;
 }) {
+  const [activeSection, setActiveSection] = useState<"assessmentScales" | "remarkCategories" | null>(null);
   const scales = config.assessmentScales ?? [];
+  const remarkCategories = config.remarkCategories ?? [];
   const updateScale = (scaleIndex: number, scale: AssessmentScale) => {
     onChange({
       ...config,
@@ -2201,130 +2789,197 @@ function GlobalSchoolWorkEditor({
     <EditorPanel title="Schoolwork settings">
       <div className="panel-heading global-about-heading">
         <div>
-          <p>Global default assessment scales are available to every school when teachers create assessments.</p>
+          <p>Manage global assessment scales and remark categories available to all schools.</p>
         </div>
         <button className="primary-action" type="button" onClick={() => void onSubmit()}>
           <Save size={18} />
           Save settings
         </button>
       </div>
-      <div className="scale-editor-list">
-        <button
-          className="secondary-action repeater-add-button"
-          type="button"
-          onClick={() => onChange({
-            ...config,
-            assessmentScales: [
-              ...scales,
-              {
-                id: `scale-${Date.now()}`,
-                name: "New assessment scale",
-                levels: [
-                  { id: `level-${Date.now()}-1`, value: "3", minPercentage: 80, description: "" },
-                  { id: `level-${Date.now()}-2`, value: "2", minPercentage: 50, description: "" },
-                  { id: `level-${Date.now()}-3`, value: "1", minPercentage: 0, description: "" },
-                  { id: "excused", value: "Excused", minPercentage: 0, description: "" },
-                  { id: "assessed", value: "Assessed", minPercentage: 0, description: "" },
+      {activeSection === null ? (
+        <div className="editor-section-card-grid">
+          <button className="editor-section-card" type="button" onClick={() => setActiveSection("assessmentScales")}>
+            <AdminCardTitle icon={faScaleBalanced} title="Assessment scales" />
+            <span>Manage global default assessment scales available to every school.</span>
+          </button>
+          <button className="editor-section-card" type="button" onClick={() => setActiveSection("remarkCategories")}>
+            <AdminCardTitle icon={faTags} title="Remark categories" />
+            <span>Manage global categories for teacher remarks on students.</span>
+          </button>
+        </div>
+      ) : activeSection === "assessmentScales" ? (
+        <>
+          <button className="school-work-back-link" type="button" onClick={() => setActiveSection(null)}>
+            <ArrowLeft size={16} />
+            Back to settings
+          </button>
+          <div className="scale-editor-list">
+            <button
+              className="secondary-action repeater-add-button"
+              type="button"
+              onClick={() => onChange({
+                ...config,
+                assessmentScales: [
+                  ...scales,
+                  {
+                    id: `scale-${Date.now()}`,
+                    name: "New assessment scale",
+                    levels: [
+                      { id: `level-${Date.now()}-1`, value: "3", minPercentage: 80, description: "" },
+                      { id: `level-${Date.now()}-2`, value: "2", minPercentage: 50, description: "" },
+                      { id: `level-${Date.now()}-3`, value: "1", minPercentage: 0, description: "" },
+                      { id: "excused", value: "Excused", minPercentage: 0, description: "" },
+                      { id: "assessed", value: "Assessed", minPercentage: 0, description: "" },
+                    ],
+                  },
                 ],
-              },
-            ],
-          })}
-        >
-          Add assessment scale
-        </button>
-        {scales.map((scale, scaleIndex) => (
-          <section className="sub-editor-panel assessment-scale-panel" key={scale.id}>
-            <div className="scale-heading">
-              <TextInput
-                label="Scale name"
-                value={scale.name}
-                onChange={(name) => updateScale(scaleIndex, { ...scale, name })}
-              />
-              <TextInput
-                label="Scale id"
-                value={scale.id}
-                onChange={(id) => updateScale(scaleIndex, { ...scale, id: slugifySchoolName(id) })}
-              />
+              })}
+            >
+              Add assessment scale
+            </button>
+            {scales.map((scale, scaleIndex) => (
+              <section className="sub-editor-panel assessment-scale-panel" key={scale.id}>
+                <div className="scale-heading">
+                  <TextInput
+                    label="Scale name"
+                    value={scale.name}
+                    onChange={(name) => updateScale(scaleIndex, { ...scale, name })}
+                  />
+                  <TextInput
+                    label="Scale id"
+                    value={scale.id}
+                    onChange={(id) => updateScale(scaleIndex, { ...scale, id: slugifySchoolName(id) })}
+                  />
+                </div>
+                <div className="assessment-level-table-wrap">
+                  <table className="assessment-level-table">
+                    <thead>
+                      <tr>
+                        <th>Value</th>
+                        <th>Minimum %</th>
+                        <th>Description</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scale.levels.map((level, levelIndex) => (
+                        <tr key={level.id}>
+                          <td>
+                            <input
+                              aria-label="Value"
+                              value={level.value}
+                              onChange={(event) => updateScale(scaleIndex, {
+                                ...scale,
+                                levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value: event.target.value } : item),
+                              })}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              aria-label="Minimum percentage"
+                              value={String(level.minPercentage ?? 0)}
+                              onChange={(event) => updateScale(scaleIndex, {
+                                ...scale,
+                                levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: parsePercentageInput(event.target.value) } : item),
+                              })}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              aria-label="Description"
+                              value={level.description ?? ""}
+                              onChange={(event) => updateScale(scaleIndex, {
+                                ...scale,
+                                levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, description: event.target.value } : item),
+                              })}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              className="remove-button"
+                              type="button"
+                              onClick={() => updateScale(scaleIndex, { ...scale, levels: scale.levels.filter((_, index) => index !== levelIndex) })}
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="scale-actions">
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    onClick={() => updateScale(scaleIndex, {
+                      ...scale,
+                      levels: [...scale.levels, { id: `level-${Date.now()}`, value: "", minPercentage: 0, description: "" }],
+                    })}
+                  >
+                    Add level
+                  </button>
+                  <button
+                    className="remove-button"
+                    type="button"
+                    onClick={() => onChange({ ...config, assessmentScales: scales.filter((_, index) => index !== scaleIndex) })}
+                  >
+                    Remove scale
+                  </button>
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <button className="school-work-back-link" type="button" onClick={() => setActiveSection(null)}>
+            <ArrowLeft size={16} />
+            Back to settings
+          </button>
+          <div className="panel-heading global-about-heading">
+            <div>
+              <p>Global sub-types available to all schools under the built-in Conduct and Behavior categories. Schools can disable individual sub-types or add their own.</p>
             </div>
-            <div className="assessment-level-table-wrap">
-              <table className="assessment-level-table">
-                <thead>
-                  <tr>
-                    <th>Value</th>
-                    <th>Minimum %</th>
-                    <th>Description</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scale.levels.map((level, levelIndex) => (
-                    <tr key={level.id}>
-                      <td>
-                        <input
-                          aria-label="Value"
-                          value={level.value}
-                          onChange={(event) => updateScale(scaleIndex, {
-                            ...scale,
-                            levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value: event.target.value } : item),
-                          })}
+          </div>
+          {REMARK_PARENTS.map((parent) => {
+            const children = remarkCategories.filter((c) => c.parentId === parent.id);
+            return (
+              <section className="sub-editor-panel assessment-scale-panel" key={parent.id}>
+                <div className="scale-heading">
+                  <h4>{parent.name}</h4>
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    onClick={() => onChange({ ...config, remarkCategories: [...remarkCategories, { id: `rc-${Date.now()}`, name: "", parentId: parent.id }] })}
+                  >
+                    Add sub-type
+                  </button>
+                </div>
+                {children.length === 0 ? (
+                  <p className="empty-editor-state" style={{ margin: 0 }}>No sub-types yet. Add one above.</p>
+                ) : (
+                  <div className="remark-category-editor-list">
+                    {children.map((cat) => (
+                      <div className="remark-category-editor-row" key={cat.id}>
+                        <TextInput
+                          label="Sub-type name"
+                          value={cat.name}
+                          onChange={(name) => onChange({ ...config, remarkCategories: remarkCategories.map((item) => item.id === cat.id ? { ...item, name } : item) })}
                         />
-                      </td>
-                      <td>
-                        <input
-                          aria-label="Minimum percentage"
-                          value={String(level.minPercentage ?? 0)}
-                          onChange={(event) => updateScale(scaleIndex, {
-                            ...scale,
-                            levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: parsePercentageInput(event.target.value) } : item),
-                          })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          aria-label="Description"
-                          value={level.description ?? ""}
-                          onChange={(event) => updateScale(scaleIndex, {
-                            ...scale,
-                            levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, description: event.target.value } : item),
-                          })}
-                        />
-                      </td>
-                      <td>
-                        <button
-                          className="remove-button"
-                          type="button"
-                          onClick={() => updateScale(scaleIndex, { ...scale, levels: scale.levels.filter((_, index) => index !== levelIndex) })}
-                        >
+                        <button className="remove-button" type="button" onClick={() => onChange({ ...config, remarkCategories: remarkCategories.filter((item) => item.id !== cat.id) })}>
+                          <Trash2 size={14} />
                           Remove
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="scale-actions">
-              <button
-                className="secondary-action"
-                type="button"
-                onClick={() => updateScale(scaleIndex, {
-                  ...scale,
-                  levels: [...scale.levels, { id: `level-${Date.now()}`, value: "", minPercentage: 0, description: "" }],
-                })}
-              >
-                Add level
-              </button>
-              <button
-                className="remove-button"
-                type="button"
-                onClick={() => onChange({ ...config, assessmentScales: scales.filter((_, index) => index !== scaleIndex) })}
-              >
-                Remove scale
-              </button>
-            </div>
-          </section>
-        ))}
-      </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </>
+      )}
     </EditorPanel>
   );
 }
@@ -2423,12 +3078,17 @@ function SchoolEditor({
     categories: ["Teacher"],
     visibleOnHomePage: true,
     visibleOnStaffPage: true,
+    accountDisabled: false,
   });
   const classes = school.classes ?? [];
   const gradeLevels = school.gradeLevels ?? [];
   const gradeOptions = [
     { value: "", label: "Select grade and year" },
     ...gradeLevels.map((gradeLevel) => ({ value: gradeLevel.id, label: formatGradeLevel(gradeLevel) })),
+  ];
+  const subjectClassGradeOptions = [
+    { value: "", label: "Select grade and year" },
+    ...gradeLevels.map((gradeLevel) => ({ value: gradeLevel.id, label: formatSubjectClassGradeLevel(gradeLevel) })),
   ];
   const getGradeLevel = (gradeLevelId?: string) => gradeLevels.find((gradeLevel) => gradeLevel.id === gradeLevelId);
   const createGradeLevel = (): SchoolGradeLevel => ({ id: `grade-${Date.now()}`, grade: "", year: String(new Date().getFullYear()) });
@@ -2468,6 +3128,7 @@ function SchoolEditor({
     gender: "",
     description: "",
     guardians: [],
+    accountDisabled: false,
   });
   const createNewsItem = (): NewsItem => ({
     id: `news-${Date.now()}`,
@@ -2520,6 +3181,8 @@ function SchoolEditor({
     updateSchool({ ...school, [field]: value });
   };
   const updateSchoolWorkSettings = (nextSettings: SchoolWorkSettings) => setField("schoolWorkSettings", nextSettings);
+  const updateRemarkSettings = (next: SchoolRemarkSettings) => setField("remarkSettings", next);
+  const globalRemarkCategories = globalSchoolWork?.remarkCategories ?? [];
 
   const createSubject = (): Subject => ({
     id: `subject-${Date.now()}`,
@@ -2527,15 +3190,58 @@ function SchoolEditor({
     abbreviation: "",
     color: subjectColorOptions[0],
   });
-  const createSubjectClass = (): SubjectClass => ({
-    id: `subject-class-${Date.now()}`,
-    name: "New subject class",
-    subjectId: "",
-    gradeLevelId: "",
-    baseClassId: "",
-    teacherName: "",
-    studentIds: [],
-  });
+  const getAutomaticSubjectClassName = (
+    subjectId: string,
+    baseClassId?: string,
+    gradeLevelId?: string,
+    subjectList: Subject[] = subjects,
+    classList: ClassGroup[] = classes,
+    gradeLevelList: SchoolGradeLevel[] = gradeLevels,
+  ) => {
+    const subjectName = subjectList.find((subject) => subject.id === subjectId)?.name;
+    const className = classList.find((classGroup) => classGroup.id === baseClassId)?.name;
+    const gradeLabel = formatSubjectClassGradeLevel(gradeLevelList.find((gradeLevel) => gradeLevel.id === gradeLevelId));
+    if (subjectName && className) {
+      return `${subjectName} - ${className}`;
+    }
+    if (subjectName && gradeLabel) {
+      return `${subjectName} - ${gradeLabel}`;
+    }
+    return subjectName || className || (gradeLabel ? `Grade ${gradeLabel}` : "New subject class");
+  };
+  const withAutomaticSubjectClassName = (
+    subjectClass: SubjectClass,
+    subjectList: Subject[] = subjects,
+    classList: ClassGroup[] = classes,
+    gradeLevelList: SchoolGradeLevel[] = gradeLevels,
+  ): SubjectClass => subjectClass.nameOverride
+    ? subjectClass
+    : {
+      ...subjectClass,
+      name: getAutomaticSubjectClassName(subjectClass.subjectId, subjectClass.baseClassId, subjectClass.gradeLevelId, subjectList, classList, gradeLevelList),
+    };
+  const updateAutomaticSubjectClassNames = (
+    nextSubjectClasses: SubjectClass[],
+    subjectList: Subject[] = subjects,
+    classList: ClassGroup[] = classes,
+    gradeLevelList: SchoolGradeLevel[] = gradeLevels,
+  ) => nextSubjectClasses.map((subjectClass) => withAutomaticSubjectClassName(subjectClass, subjectList, classList, gradeLevelList));
+  const createSubjectClass = (): SubjectClass => {
+    const baseClass = classes[0];
+    const subjectId = subjects[0]?.id ?? "";
+    const baseClassId = baseClass?.id ?? "";
+    const gradeLevelId = baseClass?.gradeLevelId ?? "";
+    return {
+      id: `subject-class-${Date.now()}`,
+      name: getAutomaticSubjectClassName(subjectId, baseClassId, gradeLevelId),
+      nameOverride: false,
+      subjectId,
+      gradeLevelId,
+      baseClassId,
+      teacherName: "",
+      studentIds: [],
+    };
+  };
   const [draftSubjectClass, setDraftSubjectClass] = useState<SubjectClass>(() => createSubjectClass());
   const staffOptions = [
     { value: "", label: "Select staff member" },
@@ -2553,7 +3259,26 @@ function SchoolEditor({
         label="Categories"
         values={getStaffCategories(item)}
         options={staffCategoryOptions}
-        onChange={(categories) => update({ ...item, categories: categories as StaffCategory[], category: categories[0] as StaffMember["category"] | undefined })}
+        onChange={(categories) => {
+          const nextCategories = categories as StaffCategory[];
+          update({
+            ...item,
+            categories: nextCategories,
+            category: nextCategories[0] as StaffMember["category"] | undefined,
+            canAccessAdminPage: item.canAccessAdminPage ?? nextCategories.includes("Administration"),
+          });
+        }}
+      />
+      <CheckboxInput
+        label="Access admin page"
+        checked={staffCanAccessAdminPage(item)}
+        onChange={(checked) => update({ ...item, canAccessAdminPage: checked, accountDisabled: checked ? false : item.accountDisabled ?? false })}
+      />
+      <CheckboxInput
+        label="Disable account"
+        checked={isStaffAccountDisabled(item)}
+        disabled={staffCanAccessAdminPage(item)}
+        onChange={(checked) => update({ ...item, accountDisabled: checked })}
       />
       <TextInput label="Description" value={item.role} onChange={(value) => update({ ...item, role: value })} />
       <TextInput label="Phone" value={item.phone ?? ""} onChange={(value) => update({ ...item, phone: value })} />
@@ -2640,18 +3365,25 @@ function SchoolEditor({
   const renderSubjectClassFields = (item: SubjectClass, update: (item: SubjectClass) => void) => {
     const selectedStudents = students.filter((student) => item.studentIds.includes(student.id));
     const baseClassStudents = students.filter((student) => student.classId === item.baseClassId);
-    const getSubjectClassName = (subjectId: string, gradeLevelId: string | undefined) => {
-      const subjectName = subjects.find((subject) => subject.id === subjectId)?.name;
-      const gradeLabel = formatGradeLevel(getGradeLevel(gradeLevelId));
-      if (subjectName && gradeLabel) {
-        return `${subjectName} - Grade ${gradeLabel}`;
-      }
-      return subjectName || (gradeLabel ? `Grade ${gradeLabel}` : "New subject class");
-    };
+    const updateNameIfAutomatic = (next: SubjectClass) => update(withAutomaticSubjectClassName(next));
 
     return (
       <>
-        <TextInput label="Subject class name" value={item.name} onChange={(value) => update({ ...item, name: value })} />
+        <TextInput
+          label="Subject class name"
+          value={item.nameOverride ? item.name : getAutomaticSubjectClassName(item.subjectId, item.baseClassId, item.gradeLevelId)}
+          onChange={(value) => update({ ...item, name: value, nameOverride: true })}
+          disabled={!item.nameOverride}
+        />
+        <button
+          className="secondary-action"
+          type="button"
+          onClick={() => update(item.nameOverride
+            ? withAutomaticSubjectClassName({ ...item, nameOverride: false })
+            : { ...item, nameOverride: true, name: item.name || getAutomaticSubjectClassName(item.subjectId, item.baseClassId, item.gradeLevelId) })}
+        >
+          {item.nameOverride ? "Use standard class name" : "Override standard class name"}
+        </button>
         <SelectInput
           label="Subject"
           value={item.subjectId}
@@ -2660,10 +3392,9 @@ function SchoolEditor({
             ...subjects.map((subject) => ({ value: subject.id, label: subject.name })),
           ]}
           onChange={(value) => {
-            update({
+            updateNameIfAutomatic({
               ...item,
               subjectId: value,
-              name: getSubjectClassName(value, item.gradeLevelId),
             });
           }}
         />
@@ -2677,22 +3408,20 @@ function SchoolEditor({
           onChange={(value) => {
             const classGroup = classes.find((currentClass) => currentClass.id === value);
             const gradeLevelId = classGroup?.gradeLevelId ?? item.gradeLevelId ?? "";
-            update({
+            updateNameIfAutomatic({
               ...item,
               baseClassId: value,
               gradeLevelId,
-              name: getSubjectClassName(item.subjectId, gradeLevelId),
             });
           }}
         />
         <SelectInput
           label="Grade and year"
           value={item.gradeLevelId ?? ""}
-          options={gradeOptions}
-          onChange={(gradeLevelId) => update({
+          options={subjectClassGradeOptions}
+          onChange={(gradeLevelId) => updateNameIfAutomatic({
             ...item,
             gradeLevelId,
-            name: getSubjectClassName(item.subjectId, gradeLevelId),
           })}
         />
         <SelectInput
@@ -2780,6 +3509,11 @@ function SchoolEditor({
           <TextInput label="Last name" value={item.lastName} onChange={(value) => update({ ...item, lastName: value })} />
         </div>
         <TextInput label="Student login email" value={item.email ?? ""} onChange={(value) => update({ ...item, email: value.trim().toLowerCase() })} />
+        <CheckboxInput
+          label="Disable account"
+          checked={Boolean(item.accountDisabled)}
+          onChange={(checked) => update({ ...item, accountDisabled: checked })}
+        />
         <ImageUpload label="Student image" value={item.photoUrl ?? ""} onChange={(photoUrl) => update({ ...item, photoUrl })} variant="strictSquare" />
         <SelectInput
           label="Class"
@@ -2906,7 +3640,23 @@ function SchoolEditor({
     >
       <div className="editor-grid">
         {!activeSection && activeCategory !== "schoolWork" ? (
-          <EditorSectionCards category={activeCategoryInfo} onSelect={onSectionChange} />
+          <EditorSectionCards
+            category={activeCategoryInfo}
+            onSelect={onSectionChange}
+            extraContent={activeCategory === "schoolPage" ? (
+              <div className="school-website-visibility-bar">
+                <div>
+                  <strong>School website</strong>
+                  <small>{school.showWebsite !== false ? "Visible to the public" : "Hidden — not visible to the public"}</small>
+                </div>
+                <CheckboxInput
+                  label="Show school website"
+                  checked={school.showWebsite !== false}
+                  onChange={(checked) => setField("showWebsite", checked)}
+                />
+              </div>
+            ) : undefined}
+          />
         ) : activeSection && activeSection !== "schoolWork" ? (
           <div className="editor-back-row">
             <button className="secondary-action" type="button" onClick={onBack}>
@@ -2922,62 +3672,77 @@ function SchoolEditor({
             students={students}
             role={canAccessAllSubjectClasses ? "admin" : "teacher"}
             participantLabel={school.staff.find((member) => member.email?.toLowerCase() === currentUserEmail?.toLowerCase())?.name}
+            remarks={school.remarks ?? []}
+            remarkSettings={school.remarkSettings}
+            globalRemarkCategories={globalRemarkCategories}
             onOpen={(subjectClassId) => setActiveWorkSubjectClassId(subjectClassId)}
+            onRemarksChange={(nextRemarks) => setField("remarks", nextRemarks)}
+            onStudentChange={(student) => setField("students", students.map((s) => s.id === student.id ? student : s))}
           />
         ) : null}
         {activeSection === "profile" ? (
           <EditorPanel title="School profile">
-            <TextInput label="URL slug" value={school.id} onChange={(value) => setField("id", slugifySchoolName(value))} />
-            <TextInput label="School name" value={school.name} onChange={(value) => setField("name", value)} />
-            <TextInput label="School type" value={school.type} onChange={(value) => setField("type", value)} />
-            <TextInput label="Tagline" value={school.tagline} onChange={(value) => setField("tagline", value)} />
-            <TextArea label="About" value={school.about} onChange={(value) => setField("about", value)} />
-            <CheckboxInput
-              label="Show school website"
-              checked={school.showWebsite ?? true}
-              onChange={(checked) => setField("showWebsite", checked)}
-            />
-            <ImageUpload label="School logo" value={school.logoUrl ?? ""} onChange={(logoUrl) => setField("logoUrl", logoUrl)} variant="logo" />
-            <ImageUpload label="Hero image" value={school.heroImage} onChange={(heroImage) => setField("heroImage", heroImage)} variant="hero" />
-            <div className="split-fields">
-              {/* MAIN COLOR */}
-              <label className="field-label color-field">
-                Main color
-                <div className="color-input-wrapper">
-                  <div
-                    className="color-preview"
-                    style={{ background: school.mainColor ?? "#18322e" }}
-                  />
-                  <input
-                    type="color"
-                    value={school.mainColor ?? "#18322e"}
-                    onChange={(e) => setField("mainColor", e.target.value)}
-                  />
+            <div className="profile-field-table">
+              <div className="profile-field-row">
+                <div className="profile-field-description">
+                  <strong>URL slug</strong>
+                  <small>Contact support to change the school URL.</small>
                 </div>
-              </label>
-
-              {/* SUB COLOR */}
-              <label className="field-label color-field">
-                Sub color
+                <span className="input-shell">
+                  <input value={school.id} readOnly aria-label="URL slug" className="readonly-slug-input" />
+                </span>
+              </div>
+              <div className="profile-field-row">
+                <div className="profile-field-description"><strong>School name</strong></div>
+                <span className="input-shell">
+                  <input value={school.name} onChange={(event) => setField("name", event.target.value)} aria-label="School name" />
+                </span>
+              </div>
+              <div className="profile-field-row">
+                <div className="profile-field-description"><strong>School type</strong></div>
+                <span className="input-shell">
+                  <input value={school.type} onChange={(event) => setField("type", event.target.value)} aria-label="School type" />
+                </span>
+              </div>
+              <div className="profile-field-row">
+                <div className="profile-field-description"><strong>Tagline</strong></div>
+                <span className="input-shell">
+                  <input value={school.tagline} onChange={(event) => setField("tagline", event.target.value)} aria-label="Tagline" />
+                </span>
+              </div>
+              <div className="profile-field-row profile-field-row-tall">
+                <div className="profile-field-description"><strong>About</strong></div>
+                <textarea value={school.about} onChange={(event) => setField("about", event.target.value)} rows={5} aria-label="About" />
+              </div>
+              <div className="profile-field-row profile-field-row-tall">
+                <div className="profile-field-description"><strong>School logo</strong></div>
+                <ImageUpload label="School logo" value={school.logoUrl ?? ""} onChange={(logoUrl) => setField("logoUrl", logoUrl)} variant="logo" hideLabel />
+              </div>
+              <div className="profile-field-row profile-field-row-tall">
+                <div className="profile-field-description"><strong>Hero image</strong></div>
+                <ImageUpload label="Hero image" value={school.heroImage} onChange={(heroImage) => setField("heroImage", heroImage)} variant="hero" hideLabel />
+              </div>
+              <div className="profile-field-row">
+                <div className="profile-field-description"><strong>Main color</strong></div>
                 <div className="color-input-wrapper">
-                  <div
-                    className="color-preview"
-                    style={{ background: school.subColor ?? "#e0b44f" }}
-                  />
-                  <input
-                    type="color"
-                    value={school.subColor ?? "#e0b44f"}
-                    onChange={(e) => setField("subColor", e.target.value)}
-                  />
+                  <div className="color-preview" style={{ background: school.mainColor ?? "#18322e" }} />
+                  <input type="color" value={school.mainColor ?? "#18322e"} onChange={(event) => setField("mainColor", event.target.value)} aria-label="Main color" />
                 </div>
-              </label>
+              </div>
+              <div className="profile-field-row">
+                <div className="profile-field-description"><strong>Sub color</strong></div>
+                <div className="color-input-wrapper">
+                  <div className="color-preview" style={{ background: school.subColor ?? "#e0b44f" }} />
+                  <input type="color" value={school.subColor ?? "#e0b44f"} onChange={(event) => setField("subColor", event.target.value)} aria-label="Sub color" />
+                </div>
+              </div>
+              <div className="profile-field-row">
+                <div className="profile-field-description"><strong>Values</strong><small>Comma separated</small></div>
+                <span className="input-shell">
+                  <input value={school.values.join(", ")} onChange={(event) => setField("values", splitCsv(event.target.value))} aria-label="Values, comma separated" />
+                </span>
+              </div>
             </div>
-            <TextInput label="Values, comma separated" value={school.values.join(", ")} onChange={(value) => setField("values", splitCsv(value))} />
-            <TextInput
-              label="Admin emails, comma separated"
-              value={(school.adminEmails ?? []).join(", ")}
-              onChange={(value) => setField("adminEmails", splitCsv(value).map((item) => item.toLowerCase()))}
-            />
           </EditorPanel>
         ) : null}
 
@@ -2986,7 +3751,7 @@ function SchoolEditor({
             <div className="nested-editor-grid">
               <section className="sub-editor-panel">
                 <h3>Login format</h3>
-                <p className="editor-helper-text">Choose which sign-in methods are available for this school's registered admin emails.</p>
+                <p className="editor-helper-text">Choose which sign-in methods are available for staff with admin page access.</p>
                 <div className="login-format-list">
                   <label className="login-format-option">
                     <div>
@@ -3213,7 +3978,7 @@ function SchoolEditor({
         ) : null}
 
         {activeSection === "staff" ? (
-          <EditorPanel title="Staff">
+          <EditorPanel title="Staff and administrators">
             <button
               className="secondary-action repeater-add-button"
               type="button"
@@ -3231,7 +3996,14 @@ function SchoolEditor({
                 setStaffModalIndex(index);
               }}
               onSimulate={onSimulateStaff}
-              onRemove={(index) => setField("staff", school.staff.filter((_, currentIndex) => currentIndex !== index))}
+              onRemove={(index) => {
+                const nextStaff = school.staff.filter((_, currentIndex) => currentIndex !== index);
+                updateSchool({
+                  ...school,
+                  adminEmails: getStaffAdminEmails(nextStaff),
+                  staff: nextStaff,
+                });
+              }}
             />
             {staffModalIndex !== undefined ? (
               <RegistrationModal
@@ -3240,9 +4012,17 @@ function SchoolEditor({
                 submitLabel={staffModalIndex === null ? "Add staff member" : "Save staff member"}
                 onClose={() => setStaffModalIndex(undefined)}
                 onSubmit={() => {
-                  setField("staff", staffModalIndex === null
-                    ? [...school.staff, draftStaff]
-                    : school.staff.map((member, index) => index === staffModalIndex ? draftStaff : member));
+                  const nextDraftStaff = staffCanAccessAdminPage(draftStaff)
+                    ? { ...draftStaff, accountDisabled: false }
+                    : draftStaff;
+                  const nextStaff = staffModalIndex === null
+                    ? [...school.staff, nextDraftStaff]
+                    : school.staff.map((member, index) => index === staffModalIndex ? nextDraftStaff : member);
+                  updateSchool({
+                    ...school,
+                    adminEmails: getStaffAdminEmails(nextStaff),
+                    staff: nextStaff,
+                  });
                   setStaffModalIndex(undefined);
                 }}
               >
@@ -3296,7 +4076,7 @@ function SchoolEditor({
                       ...school,
                       gradeLevels: gradeLevels.filter((_, currentIndex) => currentIndex !== index),
                       classes: classes.map((classGroup) => classGroup.gradeLevelId === removedGradeLevelId ? { ...classGroup, gradeLevelId: "", grade: "" } : classGroup),
-                      subjectClasses: subjectClasses.map((subjectClass) => subjectClass.gradeLevelId === removedGradeLevelId ? { ...subjectClass, gradeLevelId: "" } : subjectClass),
+                      subjectClasses: updateAutomaticSubjectClassNames(subjectClasses.map((subjectClass) => subjectClass.gradeLevelId === removedGradeLevelId ? { ...subjectClass, gradeLevelId: "" } : subjectClass), subjects, classes, gradeLevels.filter((_, currentIndex) => currentIndex !== index)),
                     });
                   }}
                 />
@@ -3334,10 +4114,10 @@ function SchoolEditor({
                         ...student,
                         classId: validIds.has(student.classId) ? student.classId : nextClasses[0]?.id ?? "",
                       })),
-                      subjectClasses: subjectClasses.map((subjectClass) => ({
+                      subjectClasses: updateAutomaticSubjectClassNames(subjectClasses.map((subjectClass) => ({
                         ...subjectClass,
                         baseClassId: subjectClass.baseClassId && validIds.has(subjectClass.baseClassId) ? subjectClass.baseClassId : "",
-                      })),
+                      })), subjects, nextClasses, gradeLevels),
                     });
                   }}
                 />
@@ -3394,9 +4174,9 @@ function SchoolEditor({
                     classes: previousGradeLevelId
                       ? classes.map((classGroup) => classGroup.gradeLevelId === previousGradeLevelId ? { ...classGroup, gradeLevelId: draftGradeLevel.id, grade: draftGradeLevel.grade } : classGroup)
                       : classes,
-                    subjectClasses: previousGradeLevelId
+                    subjectClasses: updateAutomaticSubjectClassNames(previousGradeLevelId
                       ? subjectClasses.map((subjectClass) => subjectClass.gradeLevelId === previousGradeLevelId ? { ...subjectClass, gradeLevelId: draftGradeLevel.id } : subjectClass)
-                      : subjectClasses,
+                      : subjectClasses, subjects, classes, nextGradeLevels),
                   });
                   setGradeLevelModalIndex(undefined);
                 }}
@@ -3425,10 +4205,10 @@ function SchoolEditor({
                         ...student,
                         classId: validIds.has(student.classId) ? student.classId : nextClasses[0]?.id ?? "",
                       })),
-                      subjectClasses: subjectClasses.map((subjectClass) => ({
+                      subjectClasses: updateAutomaticSubjectClassNames(subjectClasses.map((subjectClass) => ({
                         ...subjectClass,
                         baseClassId: subjectClass.baseClassId && validIds.has(subjectClass.baseClassId) ? subjectClass.baseClassId : "",
-                      })),
+                      })), subjects, nextClasses, gradeLevels),
                     });
                   }
                   setClassModalIndex(undefined);
@@ -3445,8 +4225,8 @@ function SchoolEditor({
                 onClose={() => setSubjectClassModalIndex(undefined)}
                 onSubmit={() => {
                   setField("subjectClasses", subjectClassModalIndex === null
-                    ? [...subjectClasses, draftSubjectClass]
-                    : subjectClasses.map((item, index) => index === subjectClassModalIndex ? draftSubjectClass : item));
+                    ? [...subjectClasses, withAutomaticSubjectClassName(draftSubjectClass)]
+                    : subjectClasses.map((item, index) => index === subjectClassModalIndex ? withAutomaticSubjectClassName(draftSubjectClass) : item));
                   setSubjectClassModalIndex(undefined);
                 }}
               >
@@ -3493,9 +4273,14 @@ function SchoolEditor({
                 submitLabel={subjectModalIndex === null ? "Add subject" : "Save subject"}
                 onClose={() => setSubjectModalIndex(undefined)}
                 onSubmit={() => {
-                  setField("subjects", subjectModalIndex === null
+                  const nextSubjects = subjectModalIndex === null
                     ? [...subjects, draftSubject]
-                    : subjects.map((item, index) => index === subjectModalIndex ? draftSubject : item));
+                    : subjects.map((item, index) => index === subjectModalIndex ? draftSubject : item);
+                  updateSchool({
+                    ...school,
+                    subjects: nextSubjects,
+                    subjectClasses: updateAutomaticSubjectClassNames(subjectClasses, nextSubjects, classes, gradeLevels),
+                  });
                   setSubjectModalIndex(undefined);
                 }}
               >
@@ -3531,6 +4316,21 @@ function SchoolEditor({
                     </label>
                   ))}
                 </div>
+              </section>
+
+              <section className="sub-editor-panel">
+                <h3>Teacher permissions</h3>
+                <label className="login-format-option">
+                  <div>
+                    <strong>Allow teachers to create custom assessment scales</strong>
+                    <small>When disabled, only admins can create assessment scales. Teachers can still use enabled global and school-level scales.</small>
+                  </div>
+                  <CheckboxInput
+                    label="Allowed"
+                    checked={!schoolWorkSettings.disableTeacherCustomScales}
+                    onChange={(checked) => updateSchoolWorkSettings({ ...schoolWorkSettings, disableTeacherCustomScales: !checked })}
+                  />
+                </label>
               </section>
 
               <section className="sub-editor-panel">
@@ -3571,6 +4371,7 @@ function SchoolEditor({
                   ))}
                 </div>
               </section>
+
             </div>
           </EditorPanel>
         ) : null}
@@ -3584,11 +4385,17 @@ function SchoolEditor({
               assessmentScales={effectiveAssessmentScales}
               globalAssessmentScales={globalSchoolWork?.assessmentScales ?? []}
               schoolWorkSettings={schoolWorkSettings}
+              allSubjectClasses={subjectClasses}
+              remarks={school.remarks ?? []}
+              remarkSettings={school.remarkSettings}
+              globalRemarkCategories={globalRemarkCategories}
               accessLevel="admin"
               graderLabel="Admin"
               onBack={() => setActiveWorkSubjectClassId(null)}
               onChange={(nextSubjectClass) => setField("subjectClasses", subjectClasses.map((item) => item.id === nextSubjectClass.id ? nextSubjectClass : item))}
               onSchoolWorkSettingsChange={updateSchoolWorkSettings}
+              onRemarkSettingsChange={updateRemarkSettings}
+              onRemarksChange={(nextRemarks) => setField("remarks", nextRemarks)}
             />
           </div>
         ) : null}
@@ -3694,9 +4501,11 @@ function EditorMenu({
 function EditorSectionCards({
   category,
   onSelect,
+  extraContent,
 }: {
   category: (typeof editorCategories)[number];
   onSelect: (section: EditorSection) => void;
+  extraContent?: React.ReactNode;
 }) {
   return (
     <section className="editor-section-picker">
@@ -3705,10 +4514,12 @@ function EditorSectionCards({
         <h2>{category.label}</h2>
         <p>{category.description}</p>
       </div>
+      {extraContent}
       <div className="editor-section-card-grid">
         {category.sections.map((section) => (
           <button className="editor-section-card" key={section} type="button" onClick={() => onSelect(section)}>
-            <strong>{getEditorSectionLabel(section)}</strong>
+            <AdminCardTitle icon={getEditorSectionIcon(section)} title={getEditorSectionLabel(section)} />
+            {getEditorSectionExample(section) ? <small>{getEditorSectionExample(section)}</small> : null}
             <span>{getEditorSectionDescription(section)}</span>
           </button>
         ))}
@@ -3719,6 +4530,46 @@ function EditorSectionCards({
 
 function getEditorSectionLabel(section: EditorSection) {
   return editorSections.find((item) => item.id === section)?.label ?? section;
+}
+
+function AdminCardTitle({ icon, title }: { icon: IconDefinition; title: string }) {
+  return (
+    <strong className="admin-card-title">
+      <FontAwesomeIcon icon={icon} fixedWidth />
+      <span>{title}</span>
+    </strong>
+  );
+}
+
+function getEditorSectionIcon(section: EditorSection): IconDefinition {
+  const icons: Record<EditorSection, IconDefinition> = {
+    profile: faIdCard,
+    contact: faAddressBook,
+    about: faCircleInfo,
+    news: faNewspaper,
+    calendar: faCalendarDays,
+    staff: faUsers,
+    access: faKey,
+    grades: faLayerGroup,
+    classes: faChalkboardUser,
+    subjectClasses: faBookOpen,
+    subjects: faBook,
+    students: faUserGraduate,
+    schoolWorkSettings: faSliders,
+    schoolWork: faFolderOpen,
+    loginSettings: faGaugeHigh,
+  };
+  return icons[section];
+}
+
+function getEditorSectionExample(section: EditorSection) {
+  const examples: Partial<Record<EditorSection, string>> = {
+    grades: "Grade 8",
+    classes: "Class 8A",
+    subjectClasses: "Mathematics - 8A",
+    subjects: "Mathematics",
+  };
+  return examples[section];
 }
 
 function getEditorCategoryForSection(section: EditorSection) {
@@ -3751,7 +4602,7 @@ function getEditorSectionDescription(section: EditorSection) {
     about: "About page categories, pages, and rich content.",
     news: "School news articles and announcements.",
     calendar: "Important school dates and events.",
-    staff: "Staff profiles, visibility, and contact details.",
+    staff: "Staff profiles, administrator access, visibility, and contact details.",
     access: "Overview of users, roles, pages, and SchoolWork access.",
     grades: "Register grade levels and school years.",
     classes: "Main class groups and class teachers.",
@@ -3871,6 +4722,7 @@ function StudentTable({
                 <tr key={student.id || `${student.firstName}-${student.lastName}-${index}`}>
                   <td>
                     <strong>{student.firstName} {student.lastName}</strong>
+                    {student.accountDisabled ? <span>Account disabled</span> : null}
                   </td>
                   <td>{getClassName(student.classId)}</td>
                   <td>
@@ -3879,7 +4731,7 @@ function StudentTable({
                         View more info
                       </button>
                       {onSimulate ? (
-                        <button className="secondary-action" type="button" onClick={() => onSimulate(student)}>
+                        <button className="secondary-action" type="button" onClick={() => onSimulate(student)} disabled={student.accountDisabled}>
                           Simulate
                         </button>
                       ) : null}
@@ -3910,9 +4762,10 @@ function StudentTable({
               {infoStudent.photoUrl ? <img className="student-info-photo" src={infoStudent.photoUrl} alt="" /> : null}
               <div className="student-info-list">
                 <p><strong>Class:</strong> {getClassName(infoStudent.classId)}</p>
-                <p><strong>Date of birth:</strong> {infoStudent.dateOfBirth || "Not set"}</p>
+                <p><strong>Date of birth:</strong> {infoStudent.dateOfBirth ? formatDate(infoStudent.dateOfBirth) : "Not set"}</p>
                 <p><strong>Gender:</strong> {infoStudent.gender || "Not set"}</p>
                 <p><strong>Email:</strong> {infoStudent.email || "No login email"}</p>
+                <p><strong>Account:</strong> {infoStudent.accountDisabled ? "Disabled" : "Active"}</p>
                 <p><strong>Guardians:</strong> {getGuardianSummary(infoStudent)}</p>
                 <p><strong>Description:</strong> {infoStudent.description || "No description"}</p>
                 <p><strong>Student ID:</strong> {infoStudent.id}</p>
@@ -4244,7 +5097,11 @@ function StaffTable({
                 <strong>{member.name}</strong>
                 {member.photoUrl ? <span>Photo uploaded</span> : <span>No photo</span>}
               </td>
-              <td>{getStaffCategories(member).join(", ")}</td>
+              <td>
+                <span>{getStaffCategories(member).join(", ")}</span>
+                {staffCanAccessAdminPage(member) ? <span>Admin page access</span> : null}
+                {isStaffAccountDisabled(member) ? <span>Account disabled</span> : null}
+              </td>
               <td>{member.role || "No description"}</td>
               <td>
                 {member.phone ? <span>{member.phone}</span> : null}
@@ -4258,7 +5115,7 @@ function StaffTable({
               <td>
                 <div className="table-actions">
                   {onSimulate ? (
-                    <button className="secondary-action" type="button" onClick={() => onSimulate(member)} disabled={!member.email}>
+                    <button className="secondary-action" type="button" onClick={() => onSimulate(member)} disabled={!member.email || isStaffAccountDisabled(member)}>
                       Simulate
                     </button>
                   ) : null}
@@ -4293,7 +5150,7 @@ function AccessOverview({
   subjectClasses: SubjectClass[];
   subjects: Subject[];
 }) {
-  const adminEmails = school.adminEmails ?? [];
+  const adminEmails = getSchoolAdminEmails(school);
   const allowStudentMessaging = Boolean(school.schoolWorkSettings?.allowStudentMessaging);
   const getSubjectClassLabel = (subjectClass: SubjectClass) => {
     const subject = subjects.find((item) => item.id === subjectClass.subjectId);
@@ -4305,6 +5162,7 @@ function AccessOverview({
     const categories = getStaffCategories(member);
     const isTeacher = categories.includes("Teacher");
     const isAdmin = Boolean(member.email && adminEmails.map((email) => email.toLowerCase()).includes(member.email.toLowerCase()));
+    const accountDisabled = isStaffAccountDisabled(member);
     const taughtSubjectClasses = subjectClasses.filter((subjectClass) => subjectClass.teacherName === member.name).map(getSubjectClassLabel);
     const contactTeacherClasses = classes.filter((classGroup) => classGroup.teacher === member.name).map(getClassLabel);
     const access = [
@@ -4318,8 +5176,8 @@ function AccessOverview({
       id: `staff-${member.email || member.name}`,
       name: member.name,
       role: isAdmin ? "School admin" : categories.join(", "),
-      signIn: member.email || "No login email",
-      access,
+      signIn: accountDisabled ? `${member.email || "No login email"} (disabled)` : member.email || "No login email",
+      access: accountDisabled ? ["Account disabled"] : access,
     };
   });
   const studentRows = students.map((student) => {
@@ -4329,8 +5187,8 @@ function AccessOverview({
       id: `student-${student.id}`,
       name: `${student.firstName} ${student.lastName}`,
       role: "Student",
-      signIn: student.email || "No login email",
-      access: [
+      signIn: student.accountDisabled ? `${student.email || "No login email"} (disabled)` : student.email || "No login email",
+      access: student.accountDisabled ? ["Account disabled"] : [
         `SchoolWork: ${formatList(studentSubjectClasses, "no subject classes")}`,
         "Grades and feedback",
         `School chat with teachers/admins${allowStudentMessaging ? " and students" : ""}`,
@@ -4354,19 +5212,19 @@ function AccessOverview({
     <div className="access-overview">
       <section className="access-summary-grid">
         <article className="access-summary-card">
-          <strong>Public website</strong>
+          <AdminCardTitle icon={faGlobe} title="Public website" />
           <span>Everyone can view published school pages, about pages, news, calendar, staff, and student/guardian information pages.</span>
         </article>
         <article className="access-summary-card">
-          <strong>Admin dashboard</strong>
-          <span>School admin emails can edit school content, people, academics, settings, and all SchoolWork areas.</span>
+          <AdminCardTitle icon={faGaugeHigh} title="Admin dashboard" />
+          <span>Staff with admin page access can edit school content, people, academics, settings, and all SchoolWork areas.</span>
         </article>
         <article className="access-summary-card">
-          <strong>SchoolWork</strong>
+          <AdminCardTitle icon={faBookOpen} title="SchoolWork" />
           <span>Admins see all subject classes. Teachers see assigned subject classes. Students see subject classes they belong to.</span>
         </article>
         <article className="access-summary-card">
-          <strong>School chat</strong>
+          <AdminCardTitle icon={faMessage} title="School chat" />
           <span>Students can contact teachers and admins{allowStudentMessaging ? ", and student-to-student messaging is enabled." : ". Student-to-student messaging is disabled."}</span>
         </article>
       </section>
@@ -4431,7 +5289,7 @@ function NewsTable({
           {news.map((item, index) => (
             <tr key={item.id || `${item.title}-${index}`}>
               <td><strong>{item.title}</strong></td>
-              <td>{item.date}</td>
+              <td>{formatDate(item.date)}</td>
               <td>{item.slug || getNewsSlug(item)}</td>
               <td>{item.headerImage ? "Image set" : "No image"}</td>
               <td>{getTextExcerpt(item.body, 120) || "No body"}</td>
@@ -4471,8 +5329,10 @@ function CalendarTable({
     );
   }
 
+  const sorted = items.map((item, index) => ({ item, index })).sort((a, b) => b.item.date.localeCompare(a.item.date));
+
   return (
-    <div className="data-table-wrap">
+    <div className="data-table-wrap calendar-table-wrap">
       <table className="data-table calendar-table">
         <thead>
           <tr>
@@ -4482,10 +5342,10 @@ function CalendarTable({
           </tr>
         </thead>
         <tbody>
-          {items.map((item, index) => (
+          {sorted.map(({ item, index }) => (
             <tr key={`${item.title}-${item.date}-${index}`}>
               <td><strong>{item.title}</strong></td>
-              <td>{item.date}</td>
+              <td>{formatDate(item.date)}</td>
               <td>
                 <div className="table-actions calendar-table-actions">
                   <button className="calendar-edit-action" type="button" onClick={() => onEdit(item, index)}>
@@ -4628,7 +5488,12 @@ function SchoolWorkOverview({
   students,
   role,
   participantLabel,
+  remarks = [],
+  remarkSettings,
+  globalRemarkCategories = [],
   onOpen,
+  onRemarksChange,
+  onStudentChange,
 }: {
   subjectClasses: SubjectClass[];
   subjects: Subject[];
@@ -4636,32 +5501,41 @@ function SchoolWorkOverview({
   students: Student[];
   role?: SchoolWorkAccessLevel;
   participantLabel?: string;
+  remarks?: Remark[];
+  remarkSettings?: SchoolRemarkSettings;
+  globalRemarkCategories?: RemarkCategory[];
   onOpen: (subjectClassId: string) => void;
+  onRemarksChange?: (remarks: Remark[]) => void;
+  onStudentChange?: (student: Student) => void;
 }) {
   const [activeOverviewMenu, setActiveOverviewMenu] = useState<"subjects" | "contactTeacher">("subjects");
+  const [contactTeacherClassId, setContactTeacherClassId] = useState<string | null>(null);
+  const [contactInfoMode, setContactInfoMode] = useState<"contact" | "remarks" | "gpa">("contact");
+  const [contactStudentId, setContactStudentId] = useState<string | null>(null);
+  const [editingGuardianId, setEditingGuardianId] = useState<string | null>(null);
+  const [guardianDraft, setGuardianDraft] = useState<Partial<Guardian>>({});
   const canViewContactTeacherClasses = role === "admin" || role === "teacher";
   const contactTeacherClasses = canViewContactTeacherClasses
     ? classes.filter((classGroup) => {
-      if (!classGroup.teacher) {
-        return false;
-      }
+      if (!classGroup.teacher) return false;
       return role === "admin" || classGroup.teacher === participantLabel;
     })
     : [];
+  const effectiveRemarkCategories = getEffectiveRemarkCategories(globalRemarkCategories, remarkSettings);
 
   const overviewMenu = canViewContactTeacherClasses ? (
     <nav className="school-work-overview-menu" aria-label="School work overview sections">
       <button
         className={activeOverviewMenu === "subjects" ? "active-school-work-overview-menu-item" : ""}
         type="button"
-        onClick={() => setActiveOverviewMenu("subjects")}
+        onClick={() => { setActiveOverviewMenu("subjects"); setContactTeacherClassId(null); }}
       >
         Subject classes
       </button>
       <button
         className={activeOverviewMenu === "contactTeacher" ? "active-school-work-overview-menu-item" : ""}
         type="button"
-        onClick={() => setActiveOverviewMenu("contactTeacher")}
+        onClick={() => { setActiveOverviewMenu("contactTeacher"); setContactTeacherClassId(null); }}
       >
         Contact teacher
       </button>
@@ -4669,29 +5543,291 @@ function SchoolWorkOverview({
   ) : null;
 
   if (activeOverviewMenu === "contactTeacher" && canViewContactTeacherClasses) {
-    return (
-      <div className="school-work-overview">
-        {overviewMenu}
-        {contactTeacherClasses.length === 0 ? (
+    const effectiveContactClassId = contactTeacherClassId ?? (contactTeacherClasses.length === 1 ? contactTeacherClasses[0].id : null);
+    const selectedClass = effectiveContactClassId ? contactTeacherClasses.find((c) => c.id === effectiveContactClassId) : null;
+    const formatClassName = (name: string) => name.replace(/^Grade\s+/i, "Class ");
+    const contactTeacherClassTabNav = contactTeacherClasses.length > 1 ? (
+      <nav className="contact-teacher-class-tabs">
+        {contactTeacherClasses.map((classGroup) => (
+          <button
+            key={classGroup.id}
+            type="button"
+            className={classGroup.id === effectiveContactClassId ? "contact-teacher-class-tab active-contact-teacher-tab" : "contact-teacher-class-tab"}
+            onClick={() => { setContactTeacherClassId(classGroup.id); setContactStudentId(null); }}
+          >
+            {formatClassName(classGroup.name)}
+          </button>
+        ))}
+      </nav>
+    ) : null;
+    if (selectedClass) {
+      const classStudents = students.filter((s) => s.classId === selectedClass.id);
+      const contactStudent = contactStudentId ? classStudents.find((s) => s.id === contactStudentId) : null;
+
+      const getStudentGpa = (studentId: string) => {
+        const enrolledClasses = subjectClasses.filter((sc) => sc.studentIds.includes(studentId));
+        const allGrades: number[] = [];
+        for (const sc of enrolledClasses) {
+          for (const assessment of sc.assessments ?? []) {
+            const grade = assessment.grades.find((g) => g.studentId === studentId);
+            if (grade?.score !== undefined && grade.score !== "") {
+              const pct = parseFloat(grade.score);
+              if (!isNaN(pct)) allGrades.push(pct);
+            }
+          }
+        }
+        return allGrades.length > 0 ? allGrades.reduce((a, b) => a + b, 0) / allGrades.length : null;
+      };
+
+      return (
+        <div className="school-work-overview">
+          {overviewMenu}
+          {contactTeacherClassTabNav}
+          <div className="status-followup-page">
+            <div className="contact-teacher-class-heading">
+              <div>
+                <p className="eyebrow">Contact teacher</p>
+                <h3>{formatClassName(selectedClass.name)}</h3>
+              </div>
+              <div className="contact-teacher-mode-tabs" role="group" aria-label="View mode">
+                <button
+                  className={contactInfoMode === "contact" ? "active-contact-mode-tab" : ""}
+                  type="button"
+                  onClick={() => { setContactInfoMode("contact"); setContactStudentId(null); }}
+                >
+                  Contact info
+                </button>
+                <button
+                  className={contactInfoMode === "remarks" ? "active-contact-mode-tab" : ""}
+                  type="button"
+                  onClick={() => { setContactInfoMode("remarks"); setContactStudentId(null); }}
+                >
+                  Remarks
+                </button>
+                <button
+                  className={contactInfoMode === "gpa" ? "active-contact-mode-tab" : ""}
+                  type="button"
+                  onClick={() => { setContactInfoMode("gpa"); setContactStudentId(null); }}
+                >
+                  Average GPA
+                </button>
+              </div>
+            </div>
+            {classStudents.length === 0 ? (
+              <div className="empty-editor-state">
+                <h3>No students in this class</h3>
+              </div>
+            ) : (
+              <div className="contact-teacher-student-list">
+                {classStudents.map((student) => {
+                  const studentRemarks = remarks.filter((r) => r.studentId === student.id);
+                  const gpa = getStudentGpa(student.id);
+                  return (
+                    <button
+                      key={student.id}
+                      className="contact-teacher-student-row"
+                      type="button"
+                      onClick={() => setContactStudentId(student.id)}
+                    >
+                      <span className="contact-teacher-student-name">{student.firstName} {student.lastName}</span>
+                      {contactInfoMode === "remarks" ? (
+                        <span className="contact-teacher-student-meta">{studentRemarks.length} remark{studentRemarks.length !== 1 ? "s" : ""}</span>
+                      ) : contactInfoMode === "gpa" ? (
+                        <span className="contact-teacher-student-meta">{gpa !== null ? `${gpa.toFixed(1)}%` : "No grades"}</span>
+                      ) : (
+                        <span className="contact-teacher-student-meta">{student.email || student.guardianEmail || "No contact on file"}</span>
+                      )}
+                      <ChevronRight size={16} className="contact-teacher-chevron" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {contactStudent ? (
+            <div className="modal-backdrop" role="presentation" onClick={() => setContactStudentId(null)}>
+              <section
+                className="staff-modal contact-teacher-student-modal"
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="staff-modal-header">
+                  <div>
+                    <p className="eyebrow">{contactInfoMode === "contact" ? "Contact info" : contactInfoMode === "remarks" ? "Remarks" : "Average GPA"}</p>
+                    <h2>{contactStudent.firstName} {contactStudent.lastName}</h2>
+                  </div>
+                  <button className="icon-action" type="button" onClick={() => setContactStudentId(null)} aria-label="Close">✕</button>
+                </div>
+                <div className="staff-modal-body">
+                  {contactInfoMode === "contact" ? (
+                    <div className="contact-info-grid">
+                      {contactStudent.email ? <div className="contact-info-row"><span>Email</span><strong>{contactStudent.email}</strong></div> : null}
+                      {contactStudent.dateOfBirth ? <div className="contact-info-row"><span>Date of birth</span><strong>{contactStudent.dateOfBirth}</strong></div> : null}
+                      {contactStudent.gender ? <div className="contact-info-row"><span>Gender</span><strong>{contactStudent.gender}</strong></div> : null}
+                      <div className="contact-info-section">
+                        <div className="contact-guardians-header">
+                          <h4>Guardians</h4>
+                          {onStudentChange && editingGuardianId !== "new" ? (
+                            <button className="secondary-action contact-add-guardian-btn" type="button" onClick={() => { setEditingGuardianId("new"); setGuardianDraft({}); }}>
+                              <Plus size={14} /> Add guardian
+                            </button>
+                          ) : null}
+                        </div>
+                        {editingGuardianId === "new" ? (
+                          <div className="contact-guardian-form">
+                            <input className="inline-table-input" placeholder="Name *" value={guardianDraft.name ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, name: e.target.value }))} />
+                            <input className="inline-table-input" placeholder="Relationship" value={guardianDraft.relationship ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, relationship: e.target.value }))} />
+                            <input className="inline-table-input" placeholder="Phone" value={guardianDraft.phone ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, phone: e.target.value }))} />
+                            <input className="inline-table-input" placeholder="Email" value={guardianDraft.email ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, email: e.target.value }))} />
+                            <div className="contact-guardian-form-actions">
+                              <button className="primary-action" type="button" onClick={() => {
+                                if (!guardianDraft.name?.trim()) return;
+                                const newGuardian: Guardian = { id: crypto.randomUUID(), name: guardianDraft.name.trim(), relationship: guardianDraft.relationship?.trim() || undefined, phone: guardianDraft.phone?.trim() || undefined, email: guardianDraft.email?.trim() || undefined };
+                                onStudentChange?.({ ...contactStudent, guardians: [...(contactStudent.guardians ?? []), newGuardian] });
+                                setEditingGuardianId(null);
+                                setGuardianDraft({});
+                              }}>Save</button>
+                              <button className="remove-button" type="button" onClick={() => { setEditingGuardianId(null); setGuardianDraft({}); }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : null}
+                        {(contactStudent.guardians ?? []).length === 0 && !editingGuardianId ? (
+                          <p className="contact-info-empty">No guardians on file.</p>
+                        ) : (contactStudent.guardians ?? []).map((g) => (
+                          <div key={g.id}>
+                            {editingGuardianId === g.id ? (
+                              <div className="contact-guardian-form">
+                                <input className="inline-table-input" placeholder="Name *" value={guardianDraft.name ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, name: e.target.value }))} />
+                                <input className="inline-table-input" placeholder="Relationship" value={guardianDraft.relationship ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, relationship: e.target.value }))} />
+                                <input className="inline-table-input" placeholder="Phone" value={guardianDraft.phone ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, phone: e.target.value }))} />
+                                <input className="inline-table-input" placeholder="Email" value={guardianDraft.email ?? ""} onChange={(e) => setGuardianDraft((d) => ({ ...d, email: e.target.value }))} />
+                                <div className="contact-guardian-form-actions">
+                                  <button className="primary-action" type="button" onClick={() => {
+                                    if (!guardianDraft.name?.trim()) return;
+                                    const updated: Guardian = { ...g, name: guardianDraft.name.trim(), relationship: guardianDraft.relationship?.trim() || undefined, phone: guardianDraft.phone?.trim() || undefined, email: guardianDraft.email?.trim() || undefined };
+                                    onStudentChange?.({ ...contactStudent, guardians: (contactStudent.guardians ?? []).map((x) => x.id === g.id ? updated : x) });
+                                    setEditingGuardianId(null);
+                                    setGuardianDraft({});
+                                  }}>Save</button>
+                                  <button className="remove-button" type="button" onClick={() => { setEditingGuardianId(null); setGuardianDraft({}); }}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="contact-guardian-card">
+                                <div className="contact-guardian-card-body">
+                                  <strong>{g.name}</strong>
+                                  {g.relationship ? <span>{g.relationship}</span> : null}
+                                  {g.phone ? <span>{g.phone}</span> : null}
+                                  {g.email ? <span>{g.email}</span> : null}
+                                </div>
+                                {onStudentChange ? (
+                                  <div className="contact-guardian-card-actions">
+                                    <button className="secondary-action" type="button" onClick={() => { setEditingGuardianId(g.id); setGuardianDraft({ name: g.name, relationship: g.relationship, phone: g.phone, email: g.email }); }}>Edit</button>
+                                    <button className="remove-button" type="button" onClick={() => onStudentChange?.({ ...contactStudent, guardians: (contactStudent.guardians ?? []).filter((x) => x.id !== g.id) })}>Remove</button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : contactInfoMode === "remarks" ? (
+                    <div className="contact-remarks-list">
+                      {remarks.filter((r) => r.studentId === contactStudent.id).length === 0 ? (
+                        <p className="contact-info-empty">No remarks for this student.</p>
+                      ) : (
+                        remarks.filter((r) => r.studentId === contactStudent.id)
+                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                          .map((remark) => {
+                            const cat = effectiveRemarkCategories.find((c) => c.id === remark.categoryId);
+                            const sc = subjectClasses.find((c) => c.id === remark.subjectClassId);
+                            const subj = sc ? subjects.find((s) => s.id === sc.subjectId) : null;
+                            return (
+                              <div className="remark-card" key={remark.id}>
+                                <div className="remark-card-meta">
+                                  {cat ? <span className="remark-category-badge">{cat.name}</span> : null}
+                                  <span className="remark-source-label">{subj ? subj.name : "General"}</span>
+                                  <span className="remark-time">{new Date(remark.createdAt).toLocaleDateString()}</span>
+                                </div>
+                                <p className="remark-body">{remark.body}</p>
+                              </div>
+                            );
+                          })
+                      )}
+                    </div>
+                  ) : (
+                    <div className="contact-gpa-list">
+                      {subjectClasses.filter((sc) => sc.studentIds.includes(contactStudent.id)).length === 0 ? (
+                        <p className="contact-info-empty">Student is not enrolled in any subject classes.</p>
+                      ) : (
+                        subjectClasses.filter((sc) => sc.studentIds.includes(contactStudent.id)).map((sc) => {
+                          const subj = subjects.find((s) => s.id === sc.subjectId);
+                          const graded = (sc.assessments ?? []).filter((a) => {
+                            const g = a.grades.find((g) => g.studentId === contactStudent.id);
+                            return g?.score !== undefined && g.score !== "";
+                          });
+                          const avg = graded.length > 0
+                            ? graded.reduce((sum, a) => {
+                              const g = a.grades.find((g) => g.studentId === contactStudent.id);
+                              return sum + (parseFloat(g?.score ?? "0") || 0);
+                            }, 0) / graded.length
+                            : null;
+                          return (
+                            <div className="contact-gpa-row" key={sc.id}>
+                              <span className="contact-gpa-subject">{subj?.name ?? sc.name}</span>
+                              <span className="contact-gpa-value">{avg !== null ? `${avg.toFixed(1)}%` : "—"}</span>
+                            </div>
+                          );
+                        })
+                      )}
+                      {(() => {
+                        const gpa = getStudentGpa(contactStudent.id);
+                        return gpa !== null ? (
+                          <div className="contact-gpa-row contact-gpa-overall">
+                            <span className="contact-gpa-subject">Overall average</span>
+                            <strong className="contact-gpa-value">{gpa.toFixed(1)}%</strong>
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (contactTeacherClasses.length === 0) {
+      return (
+        <div className="school-work-overview">
+          {overviewMenu}
           <div className="empty-editor-state">
             <h3>No contact teacher classes</h3>
             <p>{role === "admin" ? "No classes have a contact teacher assigned." : "You are not assigned as contact teacher for any classes."}</p>
           </div>
-        ) : (
-          <div className="school-work-card-grid">
-            {contactTeacherClasses.map((classGroup) => {
-              const classStudents = students.filter((student) => student.classId === classGroup.id);
-              return (
-                <article className="school-work-card school-work-contact-teacher-card" key={classGroup.id}>
-                  <strong>{classGroup.name}</strong>
-                  <span>{classGroup.grade ? `Grade ${classGroup.grade}` : "No grade set"}</span>
-                  <span>{classStudents.length} student{classStudents.length === 1 ? "" : "s"}</span>
-                  {role === "admin" ? <span>{classGroup.teacher}</span> : null}
-                </article>
-              );
-            })}
-          </div>
-        )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="school-work-overview">
+        {overviewMenu}
+        <nav className="contact-teacher-class-tabs">
+          {contactTeacherClasses.map((classGroup) => (
+            <button
+              key={classGroup.id}
+              type="button"
+              className={classGroup.id === contactTeacherClassId ? "contact-teacher-class-tab active-contact-teacher-tab" : "contact-teacher-class-tab"}
+              onClick={() => { setContactTeacherClassId(classGroup.id); setContactStudentId(null); }}
+            >
+              {formatClassName(classGroup.name)}
+            </button>
+          ))}
+        </nav>
       </div>
     );
   }
@@ -4723,14 +5859,14 @@ function SchoolWorkOverview({
               onClick={() => onOpen(subjectClass.id)}
               style={{ "--subject-card-color": subject?.color ?? "#1f6857" } as React.CSSProperties}
             >
-              <strong>{subject?.name ?? subjectClass.name}</strong>
+              <AdminCardTitle icon={faBookOpen} title={subject?.name ?? subjectClass.name} />
               <span className="subject-card-teacher">
                 <span className="subject-card-teacher-icon">
                   <FontAwesomeIcon icon={faUser} />
                 </span>
                 {subjectClass.teacherName || "No teacher assigned"}
               </span>
-              <span>{mainClass?.grade ? `Grade ${mainClass.grade}` : mainClass?.name ?? "Mixed classes"}</span>
+              <span>{mainClass ? formatSchoolWorkClassTitle(mainClass.name) : "Mixed classes"}</span>
             </button>
           );
         })}
@@ -4753,6 +5889,7 @@ function createAssessment(assessmentScales: AssessmentScale[], folderId?: string
     id: `assessment-${Date.now()}`,
     title: "New assessment",
     date: new Date().toISOString().slice(0, 10),
+    dueTime: "15:00",
     requiresTurnIn: true,
     format: assessmentFormatOptions[0].value,
     scaleId: assessmentScales[0]?.id ?? "",
@@ -4893,12 +6030,18 @@ function AssessmentFields({
   return (
     <>
       <TextInput label="Title" value={assessment.title} onChange={(title) => onChange({ ...assessment, title })} />
-      <DateInput label="Date" value={assessment.date} onChange={(date) => onChange({ ...assessment, date })} />
+      <DateInput label={assessment.requiresTurnIn ? "Due date" : "Date"} value={assessment.date} onChange={(date) => onChange({ ...assessment, date })} />
       <CheckboxInput
         label="Students need to turn something in"
         checked={assessment.requiresTurnIn}
         onChange={(requiresTurnIn) => onChange({ ...assessment, requiresTurnIn })}
       />
+      {assessment.requiresTurnIn ? (
+        <label className="field-label">
+          Due time
+          <input type="time" value={assessment.dueTime ?? ""} onChange={(event) => onChange({ ...assessment, dueTime: event.target.value })} />
+        </label>
+      ) : null}
       <SelectInput
         label="Assessment format"
         value={assessment.format}
@@ -4988,7 +6131,7 @@ function GradebookView({
                     <th key={assessment.id}>
                       <button className="gradebook-assessment-button" type="button" onClick={() => onOpenAssessment(assessment.id)}>
                         <strong>{assessment.title}</strong>
-                        <span>{assessment.date}</span>
+                        <span>{formatDate(assessment.date)}</span>
                       </button>
                     </th>
                   ))}
@@ -5060,7 +6203,7 @@ function StudentGradebookView({
             <div className="student-assessment-grade-heading">
               <h3>{assessment.title}</h3>
               <p>Grade: {getAssessmentGradeDisplay(assessment, scales, studentId)}</p>
-              <time>Date: {assessment.date}</time>
+              <time>Date: {formatDate(assessment.date)}</time>
             </div>
             <div className="student-assessment-feedback">
               <p><strong>Feedback:</strong> {grade?.feedback || "No feedback yet."}</p>
@@ -5097,28 +6240,104 @@ function AssessmentResourceDetail({
   const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null;
   const selectedGrade = selectedStudent ? grades.find((grade) => grade.studentId === selectedStudent.id) ?? { studentId: selectedStudent.id } : null;
   const selectedGradeIsGraded = Boolean(selectedGrade?.levelId);
+  const [draftText, setDraftText] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<SubmissionFile[]>([]);
+  const [studentSubmissionOpen, setStudentSubmissionOpen] = useState(false);
+  const assessmentDueDate = getAssessmentDueDate(assessment);
+  const submissionLocked = isStudentSubmitMode && assessment.requiresTurnIn && Boolean(assessmentDueDate && Date.now() > assessmentDueDate.getTime());
+
+  useEffect(() => {
+    setStudentSubmissionOpen(false);
+    setDraftText("");
+    setPendingFiles([]);
+  }, [assessment.id, selectedStudentId]);
+
+  const addSubmissionFiles = async (fileList: FileList | null) => {
+    if (!fileList) return;
+    const newFiles: SubmissionFile[] = await Promise.all(Array.from(fileList).map((file) => new Promise<SubmissionFile>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve({ id: `file-${Date.now()}-${Math.random().toString(36).slice(2)}`, name: file.name, type: file.type, dataUrl: e.target?.result as string });
+      reader.readAsDataURL(file);
+    })));
+    setPendingFiles((current) => [...current, ...newFiles]);
+  };
+
+  const submitTurnIn = () => {
+    if (!selectedStudent) return;
+    if (submissionLocked) return;
+    const allFiles = [...(selectedGrade?.submissionFiles ?? []), ...pendingFiles];
+    onGradeChange(selectedStudent.id, {
+      submitted: true,
+      submissionText: draftText.trim() || selectedGrade?.submissionText,
+      submissionFiles: allFiles.length > 0 ? allFiles : undefined,
+    });
+    setDraftText("");
+    setPendingFiles([]);
+    setStudentSubmissionOpen(false);
+  };
+  const uploadForSelectedStudent = () => {
+    if (!selectedStudent) return;
+    const allFiles = [...(selectedGrade?.submissionFiles ?? []), ...pendingFiles];
+    onGradeChange(selectedStudent.id, {
+      submitted: true,
+      submissionText: draftText.trim() || selectedGrade?.submissionText,
+      submissionFiles: allFiles.length > 0 ? allFiles : undefined,
+    });
+    setDraftText("");
+    setPendingFiles([]);
+  };
+  const submissionControls = (submitLabel: string, onSubmit: () => void, disabled = false) => (
+    <div className="student-turnin-form">
+      <TextArea label="Write a comment (optional)" value={draftText} onChange={setDraftText} />
+      <label className="field-label">
+        Attach files (optional — PDF, Word, Excel)
+        <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => void addSubmissionFiles(event.target.files)} />
+      </label>
+      {pendingFiles.length > 0 ? (
+        <ul className="pending-file-list">
+          {pendingFiles.map((file) => (
+            <li key={file.id}>
+              <span>{file.name}</span>
+              <button type="button" className="remove-button" onClick={() => setPendingFiles((files) => files.filter((item) => item.id !== file.id))}>×</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="student-submit-row">
+        <button className="submit-assignment-btn" type="button" onClick={onSubmit} disabled={disabled}>
+          {submitLabel}
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <article className="resource-list-item resource-detail-card assessment-card">
-      <div className="assessment-card-heading">
-        <div>
-          <p className="eyebrow">{assessment.format}</p>
-          <h3>{assessment.title}</h3>
-          <div className="assessment-meta-list">
-            <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Date:</strong> {assessment.date}</p>
-            <p><FontAwesomeIcon icon={faClipboardCheck} fixedWidth /><strong>Turn-in required:</strong> {assessment.requiresTurnIn ? "Yes" : "No"}</p>
-            <p><FontAwesomeIcon icon={faRulerCombined} fixedWidth /><strong>Assessment scale:</strong> {scale?.name ?? "No scale"}</p>
+      {(!selectedStudent || (isStudentSubmitMode && !studentSubmissionOpen)) ? (
+        <>
+          <div className="assessment-card-heading">
+            <div>
+              <p className="eyebrow">{assessment.format}</p>
+              <h3>{assessment.title}</h3>
+              <div className="assessment-meta-list">
+                <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>{assessment.requiresTurnIn ? "Due date" : "Date"}:</strong> {formatAssessmentDate(assessment)}</p>
+                <p><FontAwesomeIcon icon={faClipboardCheck} fixedWidth /><strong>Turn-in required:</strong> {assessment.requiresTurnIn ? "Yes" : "No"}</p>
+                <p><FontAwesomeIcon icon={faRulerCombined} fixedWidth /><strong>Assessment scale:</strong> {scale?.name ?? "No scale"}</p>
+              </div>
+            </div>
+            {!isStudentSubmitMode ? (
+              <div className="resource-detail-actions">
+                <button className="secondary-action" type="button" onClick={onEdit}>Edit</button>
+                <button className="remove-button" type="button" onClick={onRemove}>
+                  <Trash2 size={16} />
+                  Delete
+                </button>
+              </div>
+            ) : null}
           </div>
-        </div>
-        {!isStudentSubmitMode ? <div className="resource-detail-actions">
-          <button className="secondary-action" type="button" onClick={onEdit}>Edit</button>
-          <button className="remove-button" type="button" onClick={onRemove}>
-            <Trash2 size={16} />
-            Delete
-          </button>
-        </div> : null}
-      </div>
-      {assessment.description && (!selectedStudent || isStudentSubmitMode) ? <p className="assessment-description">{assessment.description}</p> : null}
+          {assessment.description ? <p className="assessment-description">{assessment.description}</p> : null}
+        </>
+      ) : null}
       {students.length === 0 ? (
         <div className="empty-editor-state">
           <h3>No students in this subject class</h3>
@@ -5134,38 +6353,80 @@ function AssessmentResourceDetail({
               </button>
             </div> : null}
             <section className="assessment-student-grading-panel">
-              <div>
-                <p className="eyebrow">{getAssessmentStudentStatus(assessment, selectedGrade)}</p>
-                <h3>{selectedStudent.firstName} {selectedStudent.lastName}</h3>
-              </div>
               {isStudentSubmitMode && selectedGradeIsGraded ? (
                 <div className="student-graded-assessment-summary">
-                  <p><strong>Grade:</strong> {getAssessmentGradeDisplay(assessment, scale ? [scale] : [], selectedStudent.id)}</p>
-                  <p><strong>Feedback:</strong> {selectedGrade.feedback || "No feedback yet."}</p>
-                  <p><strong>Graded by:</strong> {selectedGrade.gradedBy || "Not recorded"}</p>
-                  <p><strong>Graded:</strong> {selectedGrade.gradedAt ? formatDateTime(selectedGrade.gradedAt) : "Not recorded"}</p>
+                  <div className="student-grade-result">
+                    <span className="student-grade-label">Grade</span>
+                    <strong className="student-grade-value">{getAssessmentGradeDisplay(assessment, scale ? [scale] : [], selectedStudent.id)}</strong>
+                  </div>
+                  {selectedGrade.feedback ? (
+                    <div className="student-grade-feedback">
+                      <span className="student-grade-label">Feedback</span>
+                      <p>{selectedGrade.feedback}</p>
+                    </div>
+                  ) : null}
+                  <div className="student-grade-meta">
+                    {selectedGrade.gradedBy ? <span>Graded by {selectedGrade.gradedBy}</span> : null}
+                    {selectedGrade.gradedAt ? <span>{formatDateTime(selectedGrade.gradedAt)}</span> : null}
+                  </div>
                 </div>
               ) : isStudentSubmitMode ? (
                 assessment.requiresTurnIn ? (
-                  <button
-                    className="primary-action"
-                    type="button"
-                    onClick={() => onGradeChange(selectedStudent.id, { submitted: true })}
-                    disabled={selectedGrade.submitted === true}
-                  >
-                    {selectedGrade.submitted ? "Submitted" : "Submit assignment"}
-                  </button>
-                ) : <p className="form-status">This assignment does not require a turn-in.</p>
+                  selectedGrade.submitted ? (
+                    <div className="student-submission-content">
+                      <div className="student-submit-row">
+                        <span className="student-submitted-badge">Submitted</span>
+                      </div>
+                      {selectedGrade.submissionText ? <p className="submission-text-preview">{selectedGrade.submissionText}</p> : null}
+                      {(selectedGrade.submissionFiles ?? []).map((file) => (
+                        <a key={file.id} className="submission-file-link" href={file.dataUrl} download={file.name}>{file.name}</a>
+                      ))}
+                    </div>
+                  ) : !studentSubmissionOpen ? (
+                    submissionLocked ? (
+                      <div className="student-submit-row student-submit-row-spaced">
+                        <span className="student-submitted-badge student-not-graded-badge">Hand-in closed</span>
+                      </div>
+                    ) : (
+                      <div className="student-submit-row student-submit-row-spaced">
+                        <button className="submit-assignment-btn" type="button" onClick={() => setStudentSubmissionOpen(true)}>
+                          Submit
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <div className="student-turnin-form">
+                      <div className="editor-back-row">
+                        <button className="assessment-back-link" type="button" onClick={() => setStudentSubmissionOpen(false)}>
+                          <ArrowLeft size={16} />
+                          Back to assignment info
+                        </button>
+                      </div>
+                      {submissionControls("Submit assignment", submitTurnIn, submissionLocked)}
+                    </div>
+                  )
+                ) : (
+                  <div className="student-submit-row">
+                    <span className="student-submitted-badge student-not-graded-badge">Not graded yet</span>
+                  </div>
+                )
               ) : assessment.requiresTurnIn ? (
-                <SelectInput
-                  label="Submission status"
-                  value={selectedGrade.submitted ? "submitted" : "not-submitted"}
-                  options={[
-                    { value: "not-submitted", label: "Not submitted" },
-                    { value: "submitted", label: "Submitted" },
-                  ]}
-                  onChange={(value) => onGradeChange(selectedStudent.id, { submitted: value === "submitted" })}
-                />
+                <>
+                  <SelectInput
+                    label="Submission status"
+                    value={selectedGrade.submitted ? "submitted" : "not-submitted"}
+                    options={[
+                      { value: "not-submitted", label: "Not submitted" },
+                      { value: "submitted", label: "Submitted" },
+                    ]}
+                    onChange={(value) => onGradeChange(selectedStudent.id, { submitted: value === "submitted" })}
+                  />
+                  {selectedGrade.submissionText ? <p className="submission-text-preview">{selectedGrade.submissionText}</p> : null}
+                  {(selectedGrade.submissionFiles ?? []).map((file) => (
+                    <a key={file.id} className="submission-file-link" href={file.dataUrl} download={file.name}>{file.name}</a>
+                  ))}
+                  {submissionControls(selectedGrade.submitted ? "Update submission" : "Upload for student", uploadForSelectedStudent)}
+                </>
               ) : null}
               {!isStudentSubmitMode ? <SelectInput
                 label="Grade"
@@ -5235,6 +6496,9 @@ function TestResourceEditor({
   onChange: (patch: Partial<SubjectResource>) => void;
 }) {
   const questions = test.questions ?? [];
+  const [collapsedQuestions, setCollapsedQuestions] = useState<Set<string>>(() => new Set());
+  const toggleCollapsed = (id: string) =>
+    setCollapsedQuestions((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const updateQuestion = (questionId: string, patch: Partial<NonNullable<SubjectResource["questions"]>[number]>) => {
     onChange({ questions: questions.map((question) => question.id === questionId ? { ...question, ...patch } : question) });
   };
@@ -5262,112 +6526,140 @@ function TestResourceEditor({
 
   return (
     <div className="test-editor">
-      <TextInput label="Test title" value={test.title} onChange={(title) => onChange({ title })} />
-      <TextArea label="Description" value={test.description ?? ""} onChange={(description) => onChange({ description })} />
-      <div className="split-fields">
-        <DateInput label="Due date" value={test.dueDate ?? ""} onChange={(dueDate) => onChange({ dueDate })} />
-        <SelectInput
-          label="Assessment scale"
-          value={test.scaleId ?? ""}
-          options={[{ value: "", label: "No scale" }, ...scales.map((scale) => ({ value: scale.id, label: scale.name }))]}
-          onChange={(scaleId) => onChange({ scaleId })}
-        />
+      <div className="test-editor-settings">
+        <div className="test-settings-card">
+          <p className="eyebrow">Test details</p>
+          <TextInput label="Title" value={test.title} onChange={(title) => onChange({ title })} />
+          <TextArea label="Description" value={test.description ?? ""} onChange={(description) => onChange({ description })} />
+          <DateInput label="Due date" value={test.dueDate ?? ""} onChange={(dueDate) => onChange({ dueDate })} />
+          <SelectInput
+            label="Assessment scale"
+            value={test.scaleId ?? ""}
+            options={[{ value: "", label: "No scale" }, ...scales.map((scale) => ({ value: scale.id, label: scale.name }))]}
+            onChange={(scaleId) => onChange({ scaleId })}
+          />
+        </div>
+        <div className="test-settings-card">
+          <p className="eyebrow">Grading & timing</p>
+          <SelectInput
+            label="Grading"
+            value={test.gradingMode ?? "auto"}
+            options={[
+              { value: "auto", label: "Auto grade multiple choice" },
+              { value: "manual", label: "Manual grading" },
+            ]}
+            onChange={(gradingMode) => onChange({ gradingMode: gradingMode as SubjectResource["gradingMode"] })}
+          />
+          <SelectInput
+            label="Publish results"
+            value={test.publishResults ?? "after-review"}
+            options={[
+              { value: "immediately", label: "Immediately after submission" },
+              { value: "after-review", label: "After teacher review" },
+            ]}
+            onChange={(publishResults) => onChange({ publishResults: publishResults as SubjectResource["publishResults"] })}
+          />
+          <CheckboxInput label="Use lobby so all students start together" checked={Boolean(test.lobbyEnabled)} onChange={(lobbyEnabled) => onChange({ lobbyEnabled })} />
+          {test.lobbyEnabled ? (
+            <label className="field-label">
+              Scheduled start
+              <input type="datetime-local" value={test.startsAt ?? ""} onChange={(event) => onChange({ startsAt: event.target.value })} />
+            </label>
+          ) : null}
+          <div className="split-fields">
+            <SelectInput
+              label="Timer"
+              value={test.timerMode ?? "none"}
+              options={[
+                { value: "none", label: "No timer" },
+                { value: "duration", label: "Submit after minutes since start" },
+                { value: "fixed-end", label: "Submit at a set time" },
+              ]}
+              onChange={(timerMode) => onChange({ timerMode: timerMode as SubjectResource["timerMode"] })}
+            />
+            {test.timerMode === "duration" ? (
+              <label className="field-label">
+                Minutes
+                <input type="number" min="1" value={test.timerMinutes ?? 45} onChange={(event) => onChange({ timerMinutes: Number(event.target.value) || 1 })} />
+              </label>
+            ) : test.timerMode === "fixed-end" ? (
+              <label className="field-label">
+                End time
+                <input type="datetime-local" value={test.timerEndsAt ?? ""} onChange={(event) => onChange({ timerEndsAt: event.target.value })} />
+              </label>
+            ) : <span />}
+          </div>
+          <CheckboxInput label="Auto-submit saved answers when time expires" checked={test.autoSubmitOnTimerEnd !== false} onChange={(autoSubmitOnTimerEnd) => onChange({ autoSubmitOnTimerEnd })} />
+        </div>
       </div>
-      <SelectInput
-        label="Grading"
-        value={test.gradingMode ?? "auto"}
-        options={[
-          { value: "auto", label: "Auto grade multiple choice" },
-          { value: "manual", label: "Manual grading" },
-        ]}
-        onChange={(gradingMode) => onChange({ gradingMode: gradingMode as SubjectResource["gradingMode"] })}
-      />
-      <SelectInput
-        label="Publish results"
-        value={test.publishResults ?? "after-review"}
-        options={[
-          { value: "immediately", label: "Immediately after submission" },
-          { value: "after-review", label: "After teacher review" },
-        ]}
-        onChange={(publishResults) => onChange({ publishResults: publishResults as SubjectResource["publishResults"] })}
-      />
-      <CheckboxInput label="Use lobby so all students start together" checked={Boolean(test.lobbyEnabled)} onChange={(lobbyEnabled) => onChange({ lobbyEnabled })} />
-      {test.lobbyEnabled ? (
-        <label className="field-label">
-          Scheduled start
-          <input type="datetime-local" value={test.startsAt ?? ""} onChange={(event) => onChange({ startsAt: event.target.value })} />
-        </label>
-      ) : null}
-      <div className="split-fields">
-        <SelectInput
-          label="Timer"
-          value={test.timerMode ?? "none"}
-          options={[
-            { value: "none", label: "No timer" },
-            { value: "duration", label: "Submit after minutes since start" },
-            { value: "fixed-end", label: "Submit at a set time" },
-          ]}
-          onChange={(timerMode) => onChange({ timerMode: timerMode as SubjectResource["timerMode"] })}
-        />
-        {test.timerMode === "duration" ? (
-          <label className="field-label">
-            Minutes
-            <input type="number" min="1" value={test.timerMinutes ?? 45} onChange={(event) => onChange({ timerMinutes: Number(event.target.value) || 1 })} />
-          </label>
-        ) : test.timerMode === "fixed-end" ? (
-          <label className="field-label">
-            End time
-            <input type="datetime-local" value={test.timerEndsAt ?? ""} onChange={(event) => onChange({ timerEndsAt: event.target.value })} />
-          </label>
-        ) : <span />}
-      </div>
-      <CheckboxInput label="Auto-submit saved answers when time expires" checked={test.autoSubmitOnTimerEnd !== false} onChange={(autoSubmitOnTimerEnd) => onChange({ autoSubmitOnTimerEnd })} />
       <div className="test-question-list">
         <div className="test-question-actions">
-          <h3>Questions</h3>
-          <button className="secondary-action" type="button" onClick={() => onChange({ questions: [...questions, createTestQuestion("multiple-choice")] })}>Add multiple choice</button>
-          <button className="secondary-action" type="button" onClick={() => onChange({ questions: [...questions, createTestQuestion("text")] })}>Add text answer</button>
+          <h3>Questions <span className="test-question-count">{questions.length}</span></h3>
+          <div className="test-question-add-actions">
+            <button className="secondary-action" type="button" onClick={() => onChange({ questions: [...questions, createTestQuestion("multiple-choice")] })}>+ Multiple choice</button>
+            <button className="secondary-action" type="button" onClick={() => onChange({ questions: [...questions, createTestQuestion("text")] })}>+ Text answer</button>
+          </div>
         </div>
-        {questions.map((question, index) => (
-          <article className="test-question-card" key={question.id}>
-            <div className="test-question-heading">
-              <h4>Question {index + 1}</h4>
-              <button className="remove-button" type="button" onClick={() => onChange({ questions: questions.filter((item) => item.id !== question.id) })}>Remove</button>
-            </div>
-            <SelectInput
-              label="Question type"
-              value={question.type}
-              options={[
-                { value: "multiple-choice", label: "Multiple choice" },
-                { value: "text", label: "Text answer" },
-              ]}
-              onChange={(type) => updateQuestion(question.id, {
-                type: type as "multiple-choice" | "text",
-                ...(type === "multiple-choice" && !question.options?.length ? { options: createTestQuestion("multiple-choice").options } : {}),
-              })}
-            />
-            <TextArea label="Question" value={question.prompt} onChange={(prompt) => updateQuestion(question.id, { prompt })} />
-            <label className="field-label">
-              Marks
-              <input type="number" min="0" step="0.5" value={question.marks ?? 1} onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) || 0 })} />
-            </label>
-            {question.type === "multiple-choice" ? (
-              <>
-                <CheckboxInput label="Allow several correct answers" checked={Boolean(question.allowMultipleCorrect)} onChange={(allowMultipleCorrect) => updateQuestion(question.id, { allowMultipleCorrect })} />
-                <div className="test-option-list">
-                  {(question.options ?? []).map((option) => (
-                    <div className="test-option-row" key={option.id}>
-                      <CheckboxInput label="Correct" checked={Boolean(option.correct)} onChange={(correct) => updateOption(question.id, option.id, { correct })} />
-                      <TextInput label="Option" value={option.text} onChange={(text) => updateOption(question.id, option.id, { text })} />
-                      <button className="remove-button" type="button" onClick={() => updateQuestion(question.id, { options: (question.options ?? []).filter((item) => item.id !== option.id) })}>Remove</button>
-                    </div>
-                  ))}
-                </div>
-                <button className="secondary-action" type="button" onClick={() => addOption(question.id)}>Add option</button>
-              </>
-            ) : <p className="form-status">Text answers are saved for manual teacher review.</p>}
-          </article>
-        ))}
+        {questions.length === 0 ? (
+          <p className="form-status">No questions yet. Add multiple choice or text answer questions above.</p>
+        ) : null}
+        {questions.map((question, index) => {
+          const isCollapsed = collapsedQuestions.has(question.id);
+          const preview = question.prompt ? (question.prompt.length > 60 ? question.prompt.slice(0, 60) + "…" : question.prompt) : "No question text yet";
+          return (
+            <article className="test-question-card" key={question.id}>
+              <div className="test-question-heading">
+                <button className="test-question-collapse-btn" type="button" onClick={() => toggleCollapsed(question.id)}>
+                  <span className="test-question-number">{index + 1}</span>
+                  <span className="test-question-preview">
+                    {isCollapsed ? preview : <strong>Question {index + 1}</strong>}
+                  </span>
+                  <ChevronRight size={16} className={`test-question-chevron${isCollapsed ? "" : " test-question-chevron-open"}`} />
+                </button>
+                <button className="remove-button" type="button" onClick={() => onChange({ questions: questions.filter((item) => item.id !== question.id) })}>Remove</button>
+              </div>
+              {!isCollapsed ? (
+                <>
+                  <TextArea label="Question" value={question.prompt} onChange={(prompt) => updateQuestion(question.id, { prompt })} />
+                  <div className="split-fields">
+                    <SelectInput
+                      label="Question type"
+                      value={question.type}
+                      options={[
+                        { value: "multiple-choice", label: "Multiple choice" },
+                        { value: "text", label: "Text answer" },
+                      ]}
+                      onChange={(type) => updateQuestion(question.id, {
+                        type: type as "multiple-choice" | "text",
+                        ...(type === "multiple-choice" && !question.options?.length ? { options: createTestQuestion("multiple-choice").options } : {}),
+                      })}
+                    />
+                    <label className="field-label">
+                      Marks
+                      <input type="number" min="0" step="0.5" value={question.marks ?? 1} onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) || 0 })} />
+                    </label>
+                  </div>
+                  {question.type === "multiple-choice" ? (
+                    <>
+                      <CheckboxInput label="Allow several correct answers" checked={Boolean(question.allowMultipleCorrect)} onChange={(allowMultipleCorrect) => updateQuestion(question.id, { allowMultipleCorrect })} />
+                      <div className="test-option-list">
+                        {(question.options ?? []).map((option, optIndex) => (
+                          <div className="test-option-row" key={option.id}>
+                            <span className="test-option-letter">{String.fromCharCode(65 + optIndex)}</span>
+                            <TextInput label="Option" value={option.text} onChange={(text) => updateOption(question.id, option.id, { text })} />
+                            <CheckboxInput label="Correct" checked={Boolean(option.correct)} onChange={(correct) => updateOption(question.id, option.id, { correct })} />
+                            <button className="remove-button" type="button" onClick={() => updateQuestion(question.id, { options: (question.options ?? []).filter((item) => item.id !== option.id) })}>×</button>
+                          </div>
+                        ))}
+                      </div>
+                      <button className="secondary-action test-add-option-btn" type="button" onClick={() => addOption(question.id)}>+ Add option</button>
+                    </>
+                  ) : <p className="form-status">Text answers are saved for manual teacher review.</p>}
+                </>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     </div>
   );
@@ -5378,6 +6670,7 @@ function TestResourceView({
   scale,
   accessLevel,
   activeStudentId,
+  students,
   onBeginTest,
   onSubmissionChange,
   onSubmissionDelete,
@@ -5386,6 +6679,7 @@ function TestResourceView({
   scale?: AssessmentScale;
   accessLevel: SchoolWorkAccessLevel;
   activeStudentId?: string;
+  students?: Student[];
   onBeginTest?: () => void;
   onSubmissionChange: (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => void;
   onSubmissionDelete?: (studentId: string) => void;
@@ -5564,7 +6858,7 @@ function TestResourceView({
       <div className="test-summary">
         <p>{test.description || "No description yet."}</p>
         <div className="assessment-meta-list">
-          <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Due:</strong> {test.dueDate || "No due date"}</p>
+          <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Due:</strong> {test.dueDate ? formatDate(test.dueDate) : "No due date"}</p>
           <p><FontAwesomeIcon icon={faRulerCombined} fixedWidth /><strong>Scale:</strong> {scale?.name ?? "No scale"}</p>
           <p><ClipboardCheck size={16} /><strong>Grading:</strong> {(test.gradingMode ?? "auto") === "auto" ? "Auto grading" : "Manual grading"}</p>
           <p><Clock size={16} /><strong>Timer:</strong> {getTestTimerLabel(test)}</p>
@@ -5575,28 +6869,45 @@ function TestResourceView({
             Begin test
           </button>
         ) : null}
-        <TestSubmittedResults test={test} scale={scale} onSubmissionChange={onSubmissionChange} onSubmissionDelete={onSubmissionDelete} />
+        <TestSubmittedResults test={test} scale={scale} students={students} onSubmissionChange={onSubmissionChange} onSubmissionDelete={onSubmissionDelete} />
       </div>
     );
   }
 
   return (
-    <div className="test-taking-view">
-      <p>{test.description || "No description yet."}</p>
-      {!testStarted ? <div className="empty-editor-state">
-        <h3>{shouldUseLobby ? "Waiting in lobby" : "Ready to begin"}</h3>
-        <p>{scheduledStartDate && !scheduledStartReached ? `This test opens at ${formatDateTime(scheduledStartDate.toISOString())}.` : "Leaving the browser page during the test is recorded for teacher review."}</p>
-        <button className="primary-action test-start-button" type="button" onClick={startTest} disabled={!canStartFromLobby}>
-          <ClipboardCheck size={16} />
-          Begin test
-        </button>
-      </div> : null}
-      <div className="assessment-meta-list">
-        <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>Due:</strong> {test.dueDate || "No due date"}</p>
-        <p><Clock size={16} /><strong>Timer:</strong> {getTestTimerLabel(test)}</p>
-        {timerDeadline ? <p><Clock size={16} /><strong>Auto-submit:</strong> {formatDateTime(timerDeadline.toISOString())}</p> : null}
-        <p><Save size={16} /><strong>Autosave:</strong> {localSubmission.lastSavedAt ? formatDateTime(localSubmission.lastSavedAt) : "Not saved yet"}</p>
-      </div>
+    <div className={`test-taking-view${testStarted && !submitted ? " test-taking-active" : ""}`}>
+      {!testStarted ? (
+        <div className="test-lobby-card">
+          <div className="test-lobby-icon">
+            <ClipboardCheck size={32} />
+          </div>
+          <div className="test-lobby-content">
+            <h3>{shouldUseLobby ? "Waiting in lobby" : test.title}</h3>
+            {test.description ? <p>{test.description}</p> : null}
+            <div className="assessment-meta-list">
+              <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth />{test.dueDate ? formatDate(test.dueDate) : "No due date"}</p>
+              <p><ClipboardCheck size={14} />{questions.length} question{questions.length === 1 ? "" : "s"}</p>
+              <p><Clock size={14} />{getTestTimerLabel(test)}</p>
+            </div>
+            <p className="test-lobby-notice">
+              {scheduledStartDate && !scheduledStartReached
+                ? `This test opens at ${formatDateTime(scheduledStartDate.toISOString())}.`
+                : "Leaving the browser page during the test is recorded for teacher review."}
+            </p>
+            <button className="primary-action test-start-button" type="button" onClick={startTest} disabled={!canStartFromLobby}>
+              <ClipboardCheck size={16} />
+              {shouldUseLobby && !scheduledStartReached ? "Waiting..." : "Begin test"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {testStarted ? (
+        <div className="test-active-meta">
+          <p><Clock size={14} />{getTestTimerLabel(test)}</p>
+          {timerDeadline ? <p><Clock size={14} />Auto-submit: {formatDateTime(timerDeadline.toISOString())}</p> : null}
+          <p><Save size={14} />Autosave: {localSubmission.lastSavedAt ? formatDateTime(localSubmission.lastSavedAt) : "Not saved yet"}</p>
+        </div>
+      ) : null}
       {isStudentTestActive ? (
         <div className="test-submission-alerts" role="status">
           <strong>Activity registered</strong>
@@ -5629,13 +6940,20 @@ function TestResourceView({
         const answer = localSubmission.answers[question.id];
         return (
           <article className="test-question-card" key={question.id}>
-            <h4>{index + 1}. {question.prompt} ({question.marks ?? 1} mark{(question.marks ?? 1) === 1 ? "" : "s"})</h4>
+            <div className="test-question-header">
+              <span className="test-question-number">{index + 1}</span>
+              <div>
+                <h4>{question.prompt}</h4>
+                <span className="test-marks-badge">{question.marks ?? 1} mark{(question.marks ?? 1) === 1 ? "" : "s"}</span>
+              </div>
+            </div>
             {question.type === "multiple-choice" ? (
               <div className="test-answer-options">
-                {(question.options ?? []).map((option) => {
+                {(question.options ?? []).map((option, optIndex) => {
                   const selectedAnswers = Array.isArray(answer) ? answer : answer ? [answer] : [];
                   return (
-                    <label className="checkbox-field" key={option.id}>
+                    <label className="test-answer-option-card" key={option.id}>
+                      <span className="test-option-letter">{String.fromCharCode(65 + optIndex)}</span>
                       <input
                         type={question.allowMultipleCorrect ? "checkbox" : "radio"}
                         name={question.id}
@@ -5655,14 +6973,23 @@ function TestResourceView({
                 })}
               </div>
             ) : (
-              <TextArea label="Answer" value={typeof answer === "string" ? answer : ""} onChange={(value) => updateAnswer(question.id, value)} />
+              <TextArea label="Your answer" value={typeof answer === "string" ? answer : ""} onChange={(value) => updateAnswer(question.id, value)} />
             )}
           </article>
         );
       }) : null}
-      {testStarted ? <button className="primary-action" type="button" disabled={submitted} onClick={() => submit(false)}>
-        {submitted ? "Submitted" : "Submit test"}
-      </button> : null}
+      {testStarted ? (
+        <div className="test-submit-row">
+          {submitted ? (
+            <span className="test-submitted-badge"><ClipboardCheck size={16} /> Test submitted</span>
+          ) : (
+            <button className="primary-action test-submit-btn" type="button" onClick={() => submit(false)}>
+              <ClipboardCheck size={16} />
+              Submit test
+            </button>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -5670,28 +6997,43 @@ function TestResourceView({
 function TestSubmittedResults({
   test,
   scale,
+  students,
   onSubmissionChange,
   onSubmissionDelete,
 }: {
   test: SubjectResource;
   scale?: AssessmentScale;
+  students?: Student[];
   onSubmissionChange: (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => void;
   onSubmissionDelete?: (studentId: string) => void;
 }) {
   const questions = test.questions ?? [];
-  const attempts = [...(test.testSubmissions ?? [])].sort((first, second) => {
-    const firstTime = first.submittedAt ?? first.lastSavedAt ?? first.startedAt ?? "";
-    const secondTime = second.submittedAt ?? second.lastSavedAt ?? second.startedAt ?? "";
-    return new Date(secondTime).getTime() - new Date(firstTime).getTime();
-  });
-  const submittedCount = attempts.filter((submission) => submission.submittedAt).length;
+  const submissions = test.testSubmissions ?? [];
+  const submittedCount = submissions.filter((s) => s.submittedAt).length;
   const [openSubmissionId, setOpenSubmissionId] = useState<string | null>(null);
-  const deleteSubmission = (submission: NonNullable<SubjectResource["testSubmissions"]>[number]) => {
-    if (!onSubmissionDelete) {
-      return;
-    }
-    const label = submission.studentId === "preview" ? "the teacher preview result" : `the result for ${submission.studentId}`;
-    if (window.confirm(`Delete ${label}? This cannot be undone.`)) {
+
+  const previewSubmission = submissions.find((s) => s.studentId === "preview");
+
+  type Row = { key: string; name: string; submission: NonNullable<SubjectResource["testSubmissions"]>[number] | null };
+  const rows: Row[] = [
+    ...(students ?? [])
+      .slice()
+      .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+      .map((student) => ({
+        key: student.id,
+        name: `${student.firstName} ${student.lastName}`,
+        submission: submissions.find((s) => s.studentId === student.id) ?? null,
+      })),
+    ...(previewSubmission ? [{ key: "preview", name: "Teacher preview", submission: previewSubmission }] : []),
+  ];
+
+  const deleteSubmission = (submission: NonNullable<SubjectResource["testSubmissions"]>[number], name: string) => {
+    if (!onSubmissionDelete) return;
+    const isInProgress = submission.startedAt && !submission.submittedAt;
+    const message = isInProgress
+      ? `${name} is currently in progress on this test. Deleting will erase all their answers and progress. This cannot be undone. Continue?`
+      : `Delete the submitted result for ${name}? This cannot be undone.`;
+    if (window.confirm(message)) {
       onSubmissionDelete(submission.studentId);
     }
   };
@@ -5699,40 +7041,42 @@ function TestSubmittedResults({
   return (
     <section className="test-question-list">
       <div>
-        <h3>Submitted results</h3>
-        <p className="form-status">{submittedCount} submitted result{submittedCount === 1 ? "" : "s"} · {attempts.length} student attempt{attempts.length === 1 ? "" : "s"}</p>
+        <h3>Student results</h3>
+        <p className="form-status">{submittedCount} submitted · {rows.length} student{rows.length === 1 ? "" : "s"}</p>
       </div>
-      {attempts.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="empty-editor-state">
-          <h3>No submitted results yet</h3>
-          <p>Student and teacher preview attempts will appear here after the test is opened.</p>
+          <h3>No students in this class</h3>
+          <p>Add students to the class to track test results.</p>
         </div>
-      ) : attempts.map((submission) => {
-        const isOpen = openSubmissionId === submission.studentId;
-        const integrityEvents = submission.proctorEvents ?? [];
+      ) : rows.map(({ key, name, submission }) => {
+        const isOpen = openSubmissionId === key;
+        const integrityEvents = submission?.proctorEvents ?? [];
         const hasIntegrityEvents = integrityEvents.length > 0;
-        const statusLabel = submission.submittedAt ? "Submitted" : submission.startedAt ? "Not submitted" : "Not started";
+        const statusLabel = submission?.submittedAt ? "Submitted" : submission?.startedAt ? "In progress" : "Not started";
         return (
-          <article className="test-question-card test-result-row" key={submission.studentId}>
+          <article className="test-question-card test-result-row" key={key}>
             <div className="test-result-row-summary">
               <div>
                 <h4>
-                  {submission.studentId === "preview" ? "Teacher preview" : `Student: ${submission.studentId}`}
+                  {name}
                   {hasIntegrityEvents ? <TriangleAlert className="test-integrity-icon" size={18} aria-label="Test integrity alert" /> : null}
                 </h4>
                 <p className="form-status">
                   <strong>{statusLabel}</strong>
-                  {submission.submittedAt ? ` · Submitted ${formatDateTimeWithSeconds(submission.submittedAt)}` : submission.lastSavedAt ? ` · Last saved ${formatDateTimeWithSeconds(submission.lastSavedAt)}` : ""}
+                  {submission?.submittedAt ? ` · Submitted ${formatDateTimeWithSeconds(submission.submittedAt)}` : submission?.lastSavedAt ? ` · Last saved ${formatDateTimeWithSeconds(submission.lastSavedAt)}` : ""}
                 </p>
               </div>
               <div className="test-result-actions">
                 {hasIntegrityEvents ? <span className="test-integrity-badge">{integrityEvents.length} integrity event{integrityEvents.length === 1 ? "" : "s"}</span> : null}
-                <button className="secondary-action" type="button" onClick={() => setOpenSubmissionId(isOpen ? null : submission.studentId)}>
-                  {isOpen ? "Close" : "Open"}
-                </button>
+                {submission ? (
+                  <button className="secondary-action" type="button" onClick={() => setOpenSubmissionId(isOpen ? null : key)}>
+                    {isOpen ? "Close" : "Open"}
+                  </button>
+                ) : null}
               </div>
             </div>
-            {isOpen ? (
+            {isOpen && submission ? (
               <div className="test-result-detail">
                 <div className="test-result-actions">
                   {submission.submittedAt ? (
@@ -5740,10 +7084,10 @@ function TestSubmittedResults({
                       {submission.reviewed ? "Reviewed" : "Mark reviewed"}
                     </button>
                   ) : null}
-                  {submission.submittedAt && onSubmissionDelete ? (
-                    <button className="remove-button" type="button" onClick={() => deleteSubmission(submission)}>
+                  {onSubmissionDelete ? (
+                    <button className="remove-button" type="button" onClick={() => deleteSubmission(submission, name)}>
                       <Trash2 size={16} />
-                      Delete result
+                      {submission.submittedAt ? "Delete result" : "Delete submission"}
                     </button>
                   ) : null}
                 </div>
@@ -5782,7 +7126,184 @@ function TestSubmittedResults({
   );
 }
 
-function SchoolWorkStatusCards({ onOpenGrades }: { onOpenGrades: () => void }) {
+function getEffectiveRemarkCategories(globalCategories: RemarkCategory[], remarkSettings?: SchoolRemarkSettings): RemarkCategory[] {
+  const disabled = new Set(remarkSettings?.disabledGlobalCategoryIds ?? []);
+  return [
+    ...globalCategories.filter((c) => !disabled.has(c.id)),
+    ...(remarkSettings?.customCategories ?? []),
+  ];
+}
+
+function RemarksView({
+  students,
+  allRemarks,
+  categories,
+  subjectClassId,
+  subjectClassLabel,
+  allSubjectClasses,
+  subjects,
+  canCreate,
+  createdByLabel,
+  onChange,
+}: {
+  students: Student[];
+  allRemarks: Remark[];
+  categories: RemarkCategory[];
+  subjectClassId?: string;
+  subjectClassLabel?: string;
+  allSubjectClasses: SubjectClass[];
+  subjects: Subject[];
+  canCreate: boolean;
+  createdByLabel?: string;
+  onChange: (remarks: Remark[]) => void;
+}) {
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [draftParentId, setDraftParentId] = useState("");
+  const [draftCategoryId, setDraftCategoryId] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+
+  const selectedStudent = students.find((s) => s.id === selectedStudentId) ?? null;
+  const studentRemarks = selectedStudent
+    ? allRemarks.filter((r) => r.studentId === selectedStudent.id)
+    : [];
+
+  const subTypesForParent = (parentId: string) => categories.filter((c) => c.parentId === parentId);
+
+  const getRemarkSourceLabel = (remark: Remark): string => {
+    if (!remark.subjectClassId) return "General remark";
+    if (remark.subjectClassLabel) return remark.subjectClassLabel;
+    const sc = allSubjectClasses.find((c) => c.id === remark.subjectClassId);
+    if (!sc) return "Subject class";
+    const subject = subjects.find((s) => s.id === sc.subjectId);
+    return subject ? `${subject.name} – ${sc.name}` : sc.name;
+  };
+
+  const addRemark = () => {
+    if (!selectedStudent || !draftCategoryId) return;
+    const newRemark: Remark = {
+      id: `remark-${Date.now()}`,
+      studentId: selectedStudent.id,
+      categoryId: draftCategoryId,
+      body: draftBody.trim() || undefined,
+      subjectClassId,
+      subjectClassLabel,
+      createdAt: new Date().toISOString(),
+      createdBy: createdByLabel,
+    };
+    onChange([...allRemarks, newRemark]);
+    setDraftBody("");
+    setDraftCategoryId("");
+    setDraftParentId("");
+  };
+
+  const removeRemark = (remarkId: string) => {
+    onChange(allRemarks.filter((r) => r.id !== remarkId));
+  };
+
+  if (selectedStudent) {
+    const availableSubTypes = draftParentId ? subTypesForParent(draftParentId) : [];
+    return (
+      <div className="remarks-student-view">
+        <div className="editor-back-row">
+          <button type="button" className="school-work-back-link" onClick={() => setSelectedStudentId(null)}>
+            <ArrowLeft size={16} />
+            Back to students
+          </button>
+        </div>
+        <div>
+          <p className="eyebrow">Remarks</p>
+          <h3>{selectedStudent.firstName} {selectedStudent.lastName}</h3>
+        </div>
+        {canCreate ? (
+          <div className="remark-composer">
+            <div className="remark-parent-selector">
+              {REMARK_PARENTS.map((parent) => (
+                <button
+                  key={parent.id}
+                  type="button"
+                  className={`remark-parent-btn${draftParentId === parent.id ? " remark-parent-btn--active" : ""}`}
+                  onClick={() => { setDraftParentId(parent.id); setDraftCategoryId(""); }}
+                >
+                  {parent.name}
+                </button>
+              ))}
+            </div>
+            {draftParentId ? (
+              availableSubTypes.length === 0 ? (
+                <p className="form-status">No types configured for this category. Add sub-types in settings.</p>
+              ) : (
+                <label className="field-label">
+                  Type
+                  <select className="field-input" value={draftCategoryId} onChange={(e) => setDraftCategoryId(e.target.value)}>
+                    <option value="" disabled>Select a type</option>
+                    {availableSubTypes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+              )
+            ) : null}
+            {draftCategoryId ? (
+              <TextArea label="Comment (optional)" value={draftBody} onChange={setDraftBody} />
+            ) : null}
+            <button className="secondary-action" type="button" onClick={addRemark} disabled={!draftCategoryId}>
+              Add remark
+            </button>
+          </div>
+        ) : null}
+        <div className="remark-list">
+          {studentRemarks.length === 0 ? (
+            <div className="empty-editor-state">
+              <h3>No remarks yet</h3>
+              <p>No remarks have been registered for this student.</p>
+            </div>
+          ) : studentRemarks.map((remark) => {
+            const category = categories.find((c) => c.id === remark.categoryId);
+            const parent = category?.parentId ? REMARK_PARENTS.find((p) => p.id === category.parentId) : null;
+            return (
+              <article className="remark-card" key={remark.id}>
+                <div className="remark-card-meta">
+                  {parent ? <span className={`remark-category-badge remark-parent-badge--${parent.id}`}>{parent.name}</span> : null}
+                  {category ? <span className="remark-category-badge">{category.name}</span> : null}
+                  <span className="remark-source-label">{getRemarkSourceLabel(remark)}</span>
+                  <time className="remark-time">{formatDate(remark.createdAt)}</time>
+                  {remark.createdBy ? <span className="remark-author">{remark.createdBy}</span> : null}
+                </div>
+                {remark.body ? <p className="remark-body">{remark.body}</p> : null}
+                {canCreate ? (
+                  <button className="remove-button" type="button" onClick={() => removeRemark(remark.id)}>
+                    <Trash2 size={14} />
+                    Delete
+                  </button>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="remarks-student-list">
+      {students.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No students</h3>
+          <p>There are no students in this subject class.</p>
+        </div>
+      ) : students.map((student) => {
+        const count = allRemarks.filter((r) => r.studentId === student.id).length;
+        return (
+          <button key={student.id} className="remark-student-row" type="button" onClick={() => setSelectedStudentId(student.id)}>
+            <strong>{student.firstName} {student.lastName}</strong>
+            <span className="remark-student-count">{count > 0 ? `${count} remark${count === 1 ? "" : "s"}` : "No remarks"}</span>
+            <ChevronRight size={16} className="remark-student-chevron" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SchoolWorkStatusCards({ onOpenGrades, onOpenRemarks }: { onOpenGrades: () => void; onOpenRemarks: () => void }) {
   return (
     <section className="school-work-section-menu">
       <div>
@@ -5791,15 +7312,19 @@ function SchoolWorkStatusCards({ onOpenGrades }: { onOpenGrades: () => void }) {
       </div>
       <div className="editor-section-card-grid">
         <button className="editor-section-card" type="button" onClick={onOpenGrades}>
-          <strong>Grades</strong>
+          <AdminCardTitle icon={faChartLine} title="Grades" />
           <span>Open the assessment record for this subject class.</span>
+        </button>
+        <button className="editor-section-card" type="button" onClick={onOpenRemarks}>
+          <AdminCardTitle icon={faMessage} title="Remarks" />
+          <span>View and register remarks on students in this class.</span>
         </button>
       </div>
     </section>
   );
 }
 
-function SchoolWorkSettingsCards({ onOpenAssessmentScales }: { onOpenAssessmentScales: () => void }) {
+function SchoolWorkSettingsCards({ onOpenAssessmentScales, onOpenRemarkCategories }: { onOpenAssessmentScales: () => void; onOpenRemarkCategories: () => void }) {
   return (
     <section className="school-work-section-menu">
       <div>
@@ -5808,8 +7333,12 @@ function SchoolWorkSettingsCards({ onOpenAssessmentScales }: { onOpenAssessmentS
       </div>
       <div className="editor-section-card-grid">
         <button className="editor-section-card" type="button" onClick={onOpenAssessmentScales}>
-          <strong>Assessment scales</strong>
+          <AdminCardTitle icon={faScaleBalanced} title="Assessment scales" />
           <span>Manage global scale availability and school-specific scales.</span>
+        </button>
+        <button className="editor-section-card" type="button" onClick={onOpenRemarkCategories}>
+          <AdminCardTitle icon={faTags} title="Remark categories" />
+          <span>Control which remark categories are available and add school-specific ones.</span>
         </button>
       </div>
     </section>
@@ -5819,16 +7348,19 @@ function SchoolWorkSettingsCards({ onOpenAssessmentScales }: { onOpenAssessmentS
 function SchoolWorkSubjectSettings({
   globalAssessmentScales,
   settings,
+  accessLevel = "admin",
   onChange,
   onBack,
 }: {
   globalAssessmentScales: AssessmentScale[];
   settings: SchoolWorkSettings;
+  accessLevel?: "admin" | "teacher";
   onChange: (settings: SchoolWorkSettings) => void;
   onBack: () => void;
 }) {
   const enabledGlobalIds = settings.enabledGlobalAssessmentScaleIds ?? [];
   const customScales = settings.customAssessmentScales ?? [];
+  const canAddCustomScale = accessLevel === "admin" || !settings.disableTeacherCustomScales;
   const setCustomScale = (scaleIndex: number, scale: AssessmentScale) => {
     onChange({
       ...settings,
@@ -5885,12 +7417,16 @@ function SchoolWorkSubjectSettings({
             <h4>School assessment scales</h4>
             <p>Create scales that only this school uses.</p>
           </div>
-          <button className="secondary-action" type="button" onClick={() => onChange({
-            ...settings,
-            customAssessmentScales: [...customScales, createCustomAssessmentScale()],
-          })}>
-            Add assessment scale
-          </button>
+          {canAddCustomScale ? (
+            <button className="secondary-action" type="button" onClick={() => onChange({
+              ...settings,
+              customAssessmentScales: [...customScales, createCustomAssessmentScale()],
+            })}>
+              Add assessment scale
+            </button>
+          ) : (
+            <span className="form-status">Disabled by admin</span>
+          )}
         </div>
         {customScales.length === 0 ? (
           <div className="empty-editor-state">
@@ -5954,6 +7490,100 @@ function SchoolWorkSubjectSettings({
   );
 }
 
+function SchoolWorkRemarkCategorySettings({
+  globalRemarkCategories,
+  remarkSettings,
+  onChange,
+  onBack,
+}: {
+  globalRemarkCategories: RemarkCategory[];
+  remarkSettings: SchoolRemarkSettings;
+  onChange: (settings: SchoolRemarkSettings) => void;
+  onBack: () => void;
+}) {
+  const customCategories = remarkSettings.customCategories ?? [];
+  const disabledIds = new Set(remarkSettings.disabledGlobalCategoryIds);
+
+  const toggleGlobal = (id: string, enabled: boolean) => onChange({
+    ...remarkSettings,
+    disabledGlobalCategoryIds: enabled
+      ? remarkSettings.disabledGlobalCategoryIds.filter((x) => x !== id)
+      : [...remarkSettings.disabledGlobalCategoryIds, id],
+  });
+
+  return (
+    <section className="subject-overview-panel school-work-settings-panel">
+      <button className="school-work-back-link" type="button" onClick={onBack}>
+        <ArrowLeft size={16} />
+        Back to settings
+      </button>
+      <div className="subject-student-heading">
+        <h3>Remark categories</h3>
+        <span>Remark categories</span>
+      </div>
+      {REMARK_PARENTS.map((parent) => {
+        const globalChildren = globalRemarkCategories.filter((c) => c.parentId === parent.id);
+        const customChildren = customCategories.filter((c) => c.parentId === parent.id);
+        return (
+          <div className="settings-scale-section" key={parent.id}>
+            <h4>{parent.name}</h4>
+            {globalChildren.length > 0 ? (
+              <>
+                <p>Global sub-types — enable or disable for this school.</p>
+                <div className="settings-scale-list">
+                  {globalChildren.map((cat) => (
+                    <article className="settings-scale-card readonly-scale-card" key={cat.id}>
+                      <div><span>{cat.name}</span></div>
+                      <CheckboxInput
+                        label="Enabled"
+                        checked={!disabledIds.has(cat.id)}
+                        onChange={(checked) => toggleGlobal(cat.id, checked)}
+                      />
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="form-status">No global sub-types defined for {parent.name}.</p>
+            )}
+            <div className="test-question-actions" style={{ marginTop: "0.75rem" }}>
+              <div>
+                <strong>School-specific sub-types</strong>
+              </div>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => onChange({ ...remarkSettings, customCategories: [...customCategories, { id: `src-${Date.now()}`, name: "", parentId: parent.id }] })}
+              >
+                Add sub-type
+              </button>
+            </div>
+            {customChildren.length === 0 ? (
+              <p className="form-status">No school-specific sub-types yet.</p>
+            ) : (
+              <div className="remark-category-editor-list">
+                {customChildren.map((cat) => (
+                  <div className="remark-category-editor-row" key={cat.id}>
+                    <TextInput
+                      label="Sub-type name"
+                      value={cat.name}
+                      onChange={(name) => onChange({ ...remarkSettings, customCategories: customCategories.map((item) => item.id === cat.id ? { ...item, name } : item) })}
+                    />
+                    <button className="remove-button" type="button" onClick={() => onChange({ ...remarkSettings, customCategories: customCategories.filter((item) => item.id !== cat.id) })}>
+                      <Trash2 size={14} />
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 function SubjectClassWorkPage({
   subjectClass,
   subjects,
@@ -5961,12 +7591,19 @@ function SubjectClassWorkPage({
   assessmentScales,
   globalAssessmentScales = [],
   schoolWorkSettings,
+  allSubjectClasses = [],
+  remarks = [],
+  remarkSettings,
+  globalRemarkCategories = [],
   accessLevel = "admin",
   activeStudentId,
+  initialSimulatedStudentId,
   graderLabel,
   onBack,
   onChange,
   onSchoolWorkSettingsChange,
+  onRemarkSettingsChange,
+  onRemarksChange,
 }: {
   subjectClass: SubjectClass | null;
   subjects: Subject[];
@@ -5974,16 +7611,23 @@ function SubjectClassWorkPage({
   assessmentScales: AssessmentScale[];
   globalAssessmentScales?: AssessmentScale[];
   schoolWorkSettings?: SchoolWorkSettings;
+  allSubjectClasses?: SubjectClass[];
+  remarks?: Remark[];
+  remarkSettings?: SchoolRemarkSettings;
+  globalRemarkCategories?: RemarkCategory[];
   accessLevel?: SchoolWorkAccessLevel;
   activeStudentId?: string;
+  initialSimulatedStudentId?: string | null;
   graderLabel?: string;
   onBack: () => void;
   onChange: (subjectClass: SubjectClass) => void;
   onSchoolWorkSettingsChange?: (settings: SchoolWorkSettings) => void | Promise<void>;
+  onRemarkSettingsChange?: (settings: SchoolRemarkSettings) => void;
+  onRemarksChange?: (remarks: Remark[]) => void;
 }) {
   const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "students" | "settings">("resources");
-  const [activeSettingsSection, setActiveSettingsSection] = useState<"assessmentScales" | null>(null);
-  const [activeStatusSection, setActiveStatusSection] = useState<"grades" | null>(null);
+  const [activeSettingsSection, setActiveSettingsSection] = useState<"assessmentScales" | "remarkCategories" | null>(null);
+  const [activeStatusSection, setActiveStatusSection] = useState<"grades" | "remarks" | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState("root");
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
@@ -5995,6 +7639,8 @@ function SubjectClassWorkPage({
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set(["root"]));
   const [dragTargetFolderId, setDragTargetFolderId] = useState<string | null>(null);
   const [draftAnnouncement, setDraftAnnouncement] = useState<Pick<SubjectClassAnnouncement, "title" | "body">>({ title: "", body: "" });
+  const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+  const [confirmationAnnouncementId, setConfirmationAnnouncementId] = useState<string | null>(null);
   const [selectedGradeAssessmentId, setSelectedGradeAssessmentId] = useState<string | null>(null);
   const committedResources = useMemo(() => subjectClass?.resources ?? [], [subjectClass?.resources]);
   const committedResourceSignature = useMemo(() => JSON.stringify(committedResources), [committedResources]);
@@ -6004,12 +7650,14 @@ function SubjectClassWorkPage({
   const [hasUnsavedResourceChanges, setHasUnsavedResourceChanges] = useState(false);
   const [previewTest, setPreviewTest] = useState<SubjectResource | null>(null);
   const [previewSubmission, setPreviewSubmission] = useState<NonNullable<SubjectResource["testSubmissions"]>[number]>({ studentId: "preview", answers: {} });
+  const [simulatedStudentId, setSimulatedStudentId] = useState<string | null>(initialSimulatedStudentId ?? null);
 
   useEffect(() => {
-    if (accessLevel === "student" && activeWorkTab !== "resources" && activeWorkTab !== "status") {
+    const effectiveLevel = simulatedStudentId ? "student" : accessLevel;
+    if (effectiveLevel === "student" && activeWorkTab !== "resources" && activeWorkTab !== "status") {
       setActiveWorkTab("resources");
     }
-  }, [accessLevel, activeWorkTab]);
+  }, [accessLevel, activeWorkTab, simulatedStudentId]);
 
   useEffect(() => {
     if (accessLevel !== "student" || !activeStudentId || !subjectClass) {
@@ -6053,7 +7701,6 @@ function SubjectClassWorkPage({
   }
 
   const subject = subjects.find((item) => item.id === subjectClass.subjectId);
-  const canCreateSchoolWork = accessLevel === "admin" || accessLevel === "teacher";
   const canGradeSchoolWork = accessLevel === "admin" || accessLevel === "teacher";
   const canManageSchoolWorkSettings = accessLevel === "admin" || accessLevel === "teacher";
   const effectiveSchoolWorkSettings = schoolWorkSettings ?? {
@@ -6065,6 +7712,16 @@ function SubjectClassWorkPage({
   const announcements = subjectClass.announcements ?? [];
   const assessments = subjectClass.assessments ?? [];
   const subjectClassStudents = students.filter((student) => subjectClass.studentIds.includes(student.id));
+  const isSimulatingStudent = Boolean(simulatedStudentId) && (accessLevel === "teacher" || accessLevel === "admin");
+  const effectiveAccessLevel: SchoolWorkAccessLevel = isSimulatingStudent ? "student" : accessLevel;
+  const effectiveStudentId = isSimulatingStudent ? simulatedStudentId! : activeStudentId;
+  const simulatedStudent = isSimulatingStudent ? subjectClassStudents.find((s) => s.id === simulatedStudentId) : null;
+  const canCreateSchoolWork = effectiveAccessLevel === "admin" || effectiveAccessLevel === "teacher";
+  const effectiveRemarkCategories = getEffectiveRemarkCategories(globalRemarkCategories, remarkSettings);
+  const subjectClassLabel = (() => {
+    const sub = subjects.find((s) => s.id === subjectClass.subjectId);
+    return sub ? `${sub.name} – ${subjectClass.name}` : subjectClass.name;
+  })();
   const studentActivity = subjectClass.studentActivity ?? [];
   const folders = subjectClass.resourceFolders ?? [];
   const resources = draftResources;
@@ -6091,7 +7748,7 @@ function SubjectClassWorkPage({
     : null;
   const oneLevelUpLabel = oneLevelUpTargetId === "root" ? subjectClass.name : oneLevelUpTargetFolder?.name;
   const childFolders = folders.filter((folder) => (folder.parentId ?? "root") === selectedTreeFolderId);
-  const folderResources = resources.filter((resource) => (resource.folderId ?? "root") === selectedTreeFolderId);
+  const folderResources = resources.filter((resource) => (resource.folderId ?? "root") === selectedTreeFolderId && (effectiveAccessLevel !== "student" || !resource.hidden));
   const folderAssessments = assessments.filter((assessment) => (assessment.folderId ?? "root") === selectedTreeFolderId);
   const updateFolders = (nextFolders: ResourceFolder[]) => onChange({ ...subjectClass, resourceFolders: nextFolders });
   const updateResources = (nextResources: SubjectResource[]) => onChange({ ...subjectClass, resources: nextResources });
@@ -6150,14 +7807,51 @@ function SubjectClassWorkPage({
         title: draftAnnouncement.title.trim() || "Announcement",
         body: draftAnnouncement.body.trim(),
         createdAt: new Date().toISOString(),
+        readConfirmations: [],
       }, ...announcements],
     });
     setDraftAnnouncement({ title: "", body: "" });
+    setAnnouncementModalOpen(false);
   };
   const removeAnnouncement = (announcementId: string) => {
     onChange({ ...subjectClass, announcements: announcements.filter((announcement) => announcement.id !== announcementId) });
   };
+  const getAnnouncementConfirmations = (announcement: SubjectClassAnnouncement) => announcement.readConfirmations ?? [];
+  const getAnnouncementConfirmationCount = (announcement: SubjectClassAnnouncement) => (
+    new Set(getAnnouncementConfirmations(announcement).map((confirmation) => confirmation.studentId)).size
+  );
+  const hasConfirmedAnnouncement = (announcement: SubjectClassAnnouncement) => (
+    Boolean(effectiveStudentId && getAnnouncementConfirmations(announcement).some((confirmation) => confirmation.studentId === effectiveStudentId))
+  );
+  const confirmAnnouncementRead = (announcementId: string) => {
+    if (!effectiveStudentId) {
+      return;
+    }
+    onChange({
+      ...subjectClass,
+      announcements: announcements.map((announcement) => {
+        if (announcement.id !== announcementId || hasConfirmedAnnouncement(announcement)) {
+          return announcement;
+        }
+        return {
+          ...announcement,
+          readConfirmations: [
+            ...getAnnouncementConfirmations(announcement),
+            { studentId: effectiveStudentId, confirmedAt: new Date().toISOString() },
+          ],
+        };
+      }),
+    });
+  };
+  const selectedConfirmationAnnouncement = confirmationAnnouncementId
+    ? announcements.find((announcement) => announcement.id === confirmationAnnouncementId) ?? null
+    : null;
+  const confirmNavigation = (): boolean => {
+    if (!editingResourceId || !hasUnsavedResourceChanges) return true;
+    return window.confirm("You have unsaved changes that will be lost if you navigate away. Continue?");
+  };
   const selectTreeFolder = (folderId: string) => {
+    if (!confirmNavigation()) return;
     setSelectedFolderId(folderId);
     setSelectedResourceId(null);
     setSelectedAssessmentId(null);
@@ -6180,6 +7874,7 @@ function SubjectClassWorkPage({
     selectTreeFolder(folderId);
   };
   const selectResource = (resource: SubjectResource) => {
+    if (!confirmNavigation()) return;
     setSelectedFolderId(resource.folderId ?? "root");
     setSelectedResourceId(resource.id);
     setSelectedAssessmentId(null);
@@ -6189,6 +7884,7 @@ function SubjectClassWorkPage({
     setShowFolderResourcePicker(false);
   };
   const selectAssessment = (assessment: Assessment) => {
+    if (!confirmNavigation()) return;
     setSelectedFolderId(assessment.folderId ?? "root");
     setSelectedResourceId(null);
     setSelectedAssessmentId(assessment.id);
@@ -6565,10 +8261,29 @@ function SubjectClassWorkPage({
   return (
     <div className="school-work-page">
       <div className="editor-back-row">
-        <button className="school-work-back-link" type="button" onClick={onBack}>
+        <button className="school-work-back-link" type="button" onClick={() => { if (confirmNavigation()) onBack(); }}>
           <ArrowLeft size={16} />
           Back to subject classes
         </button>
+        {(accessLevel === "teacher" || accessLevel === "admin") && subjectClassStudents.length > 0 ? (
+          isSimulatingStudent ? (
+            <button className="simulate-student-exit-btn" type="button" onClick={() => setSimulatedStudentId(null)}>
+              <UserRound size={14} />
+              <span>Viewing as {simulatedStudent?.firstName} {simulatedStudent?.lastName}</span>
+              · Exit
+            </button>
+          ) : (
+            <label className="simulate-student-label">
+              <UserRound size={14} />
+              <select className="simulate-student-select" value="" onChange={(e) => e.target.value && setSimulatedStudentId(e.target.value)}>
+                <option value="">Simulate student...</option>
+                {subjectClassStudents.map((student) => (
+                  <option key={student.id} value={student.id}>{student.firstName} {student.lastName}</option>
+                ))}
+              </select>
+            </label>
+          )
+        ) : null}
       </div>
       <nav
         className="subject-work-nav"
@@ -6579,47 +8294,41 @@ function SubjectClassWorkPage({
           <span className="subject-work-nav-icon">
             <SchoolIcon size={20} />
           </span>
-          <strong>{subjectClass.name}</strong>
+          <strong>{formatSchoolWorkClassTitle(subjectClass.name)}</strong>
         </span>
         <span className="subject-work-nav-tabs">
-          {accessLevel !== "student" ? <button className={activeWorkTab === "overview" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("overview")}>Overview</button> : null}
-          <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("resources")}>Resources</button>
+          <button className={activeWorkTab === "overview" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("overview"); }}>Overview</button>
+          <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("resources"); }}>Resources</button>
           <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
+            if (!confirmNavigation()) return;
             setActiveWorkTab("status");
             setActiveStatusSection(null);
             setSelectedGradeAssessmentId(null);
           }}>Status and follow-up</button>
-          {accessLevel !== "student" ? <button className={activeWorkTab === "students" ? "active-subject-work-tab" : ""} type="button" onClick={() => setActiveWorkTab("students")}>Students</button> : null}
-          {canManageSchoolWorkSettings ? <button className={activeWorkTab === "settings" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
+          {effectiveAccessLevel !== "student" ? <button className={activeWorkTab === "students" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("students"); }}>Students</button> : null}
+          {canManageSchoolWorkSettings && !isSimulatingStudent ? <button className={activeWorkTab === "settings" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
+            if (!confirmNavigation()) return;
             setActiveWorkTab("settings");
             setActiveSettingsSection(null);
           }}>Settings</button> : null}
         </span>
-        <span className="subject-work-nav-spacer" aria-hidden="true" />
       </nav>
       {activeWorkTab === "overview" ? (
         <section className="subject-overview-panel">
-          <div className="subject-announcement-composer">
-            <h3>Announcements</h3>
-            <TextInput
-              label="Title"
-              value={draftAnnouncement.title}
-              onChange={(title) => setDraftAnnouncement((current) => ({ ...current, title }))}
-            />
-            <TextArea
-              label="Announcement"
-              value={draftAnnouncement.body}
-              onChange={(body) => setDraftAnnouncement((current) => ({ ...current, body }))}
-            />
-            <button className="secondary-action" type="button" onClick={postAnnouncement}>
-              Post announcement
-            </button>
-          </div>
+          {effectiveAccessLevel !== "student" ? (
+            <div className="subject-overview-actions">
+              <h3>Announcements</h3>
+              <button className="primary-action" type="button" onClick={() => setAnnouncementModalOpen(true)}>
+                <Plus size={16} />
+                Add announcement
+              </button>
+            </div>
+          ) : null}
           <div className="subject-announcement-list">
             {announcements.length === 0 ? (
               <div className="empty-editor-state">
                 <h3>No announcements yet</h3>
-                <p>Post announcements for this subject class here.</p>
+                {effectiveAccessLevel !== "student" ? <p>Post announcements for this subject class here.</p> : null}
               </div>
             ) : announcements.map((announcement) => (
               <article className="subject-announcement-card" key={announcement.id}>
@@ -6628,21 +8337,106 @@ function SubjectClassWorkPage({
                   <time>{formatDate(announcement.createdAt)}</time>
                 </div>
                 <p>{announcement.body}</p>
-                <button className="remove-button" type="button" onClick={() => removeAnnouncement(announcement.id)}>
-                  <Trash2 size={16} />
-                  Delete
-                </button>
+                {effectiveAccessLevel !== "student" ? (
+                  <div className="subject-announcement-actions">
+                    <button className="secondary-action" type="button" onClick={() => setConfirmationAnnouncementId(announcement.id)}>
+                      Confirmed by {getAnnouncementConfirmationCount(announcement)}/{subjectClassStudents.length} students
+                    </button>
+                    <button className="remove-button" type="button" onClick={() => removeAnnouncement(announcement.id)}>
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  </div>
+                ) : effectiveStudentId ? (
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    disabled={hasConfirmedAnnouncement(announcement)}
+                    onClick={() => confirmAnnouncementRead(announcement.id)}
+                  >
+                    {hasConfirmedAnnouncement(announcement) ? "Read confirmed" : "Confirm read"}
+                  </button>
+                ) : null}
               </article>
             ))}
           </div>
+          {announcementModalOpen ? (
+            <RegistrationModal
+              title="Add announcement"
+              eyebrow="Announcements"
+              submitLabel="Post announcement"
+              onClose={() => setAnnouncementModalOpen(false)}
+              onSubmit={postAnnouncement}
+            >
+              <TextInput
+                label="Title"
+                value={draftAnnouncement.title}
+                onChange={(title) => setDraftAnnouncement((current) => ({ ...current, title }))}
+              />
+              <TextArea
+                label="Announcement"
+                value={draftAnnouncement.body}
+                onChange={(body) => setDraftAnnouncement((current) => ({ ...current, body }))}
+              />
+            </RegistrationModal>
+          ) : null}
+          {selectedConfirmationAnnouncement ? (
+            <div className="modal-backdrop" role="presentation">
+              <section className="staff-modal" role="dialog" aria-modal="true" aria-labelledby="announcement-confirmations-title">
+                <div className="staff-modal-header">
+                  <div>
+                    <p className="eyebrow">Read confirmations</p>
+                    <h2 id="announcement-confirmations-title">{selectedConfirmationAnnouncement.title}</h2>
+                  </div>
+                </div>
+                <div className="staff-modal-body">
+                  <div className="announcement-confirmation-list">
+                    {subjectClassStudents.map((student) => {
+                      const confirmation = getAnnouncementConfirmations(selectedConfirmationAnnouncement).find((item) => item.studentId === student.id);
+                      return (
+                        <div className="announcement-confirmation-row" key={student.id}>
+                          <strong>{student.firstName} {student.lastName}</strong>
+                          <span>{confirmation ? `Confirmed ${formatDateTime(confirmation.confirmedAt)}` : "Not confirmed"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="staff-modal-actions">
+                  <button className="secondary-action" type="button" onClick={() => setConfirmationAnnouncementId(null)}>
+                    Close
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
         </section>
       ) : null}
       {activeWorkTab === "status" ? (
         <section className="status-followup-page">
-          {accessLevel === "student" ? (
-            <StudentGradebookView assessments={assessments} scales={assessmentScales} studentId={activeStudentId} />
+          {effectiveAccessLevel === "student" ? (
+            <StudentGradebookView assessments={assessments} scales={assessmentScales} studentId={effectiveStudentId} />
           ) : !activeStatusSection ? (
-            <SchoolWorkStatusCards onOpenGrades={() => setActiveStatusSection("grades")} />
+            <SchoolWorkStatusCards onOpenGrades={() => setActiveStatusSection("grades")} onOpenRemarks={() => setActiveStatusSection("remarks")} />
+          ) : activeStatusSection === "remarks" ? (
+            <>
+              <button className="school-work-back-link" type="button" onClick={() => setActiveStatusSection(null)}>
+                <ArrowLeft size={16} />
+                Back to status and follow-up
+              </button>
+              <RemarksView
+                students={subjectClassStudents}
+                allRemarks={remarks}
+                categories={effectiveRemarkCategories}
+                subjectClassId={subjectClass.id}
+                subjectClassLabel={subjectClassLabel}
+                allSubjectClasses={allSubjectClasses}
+                subjects={subjects}
+                canCreate={canCreateSchoolWork}
+                createdByLabel={graderLabel}
+                onChange={onRemarksChange ?? (() => {})}
+              />
+            </>
           ) : (
             <>
               {selectedGradeAssessmentId ? (() => {
@@ -6740,13 +8534,25 @@ function SubjectClassWorkPage({
         </section>
       ) : null}
       {activeWorkTab === "settings" && canManageSchoolWorkSettings && !activeSettingsSection ? (
-        <SchoolWorkSettingsCards onOpenAssessmentScales={() => setActiveSettingsSection("assessmentScales")} />
+        <SchoolWorkSettingsCards
+          onOpenAssessmentScales={() => setActiveSettingsSection("assessmentScales")}
+          onOpenRemarkCategories={() => setActiveSettingsSection("remarkCategories")}
+        />
       ) : null}
       {activeWorkTab === "settings" && canManageSchoolWorkSettings && activeSettingsSection === "assessmentScales" ? (
         <SchoolWorkSubjectSettings
           globalAssessmentScales={globalAssessmentScales}
           settings={effectiveSchoolWorkSettings}
+          accessLevel={accessLevel === "teacher" ? "teacher" : "admin"}
           onChange={(settings) => void onSchoolWorkSettingsChange?.(settings)}
+          onBack={() => setActiveSettingsSection(null)}
+        />
+      ) : null}
+      {activeWorkTab === "settings" && canManageSchoolWorkSettings && activeSettingsSection === "remarkCategories" ? (
+        <SchoolWorkRemarkCategorySettings
+          globalRemarkCategories={globalRemarkCategories}
+          remarkSettings={remarkSettings ?? { disabledGlobalCategoryIds: [], customCategories: [] }}
+          onChange={(next) => onRemarkSettingsChange?.(next)}
           onBack={() => setActiveSettingsSection(null)}
         />
       ) : null}
@@ -6802,7 +8608,7 @@ function SubjectClassWorkPage({
                     {activeFolder.description ? <p>{activeFolder.description}</p> : null}
                   </div>
                 ) : (
-                  <h3>{subjectClass.name}</h3>
+                  <h3>{formatSchoolWorkClassTitle(subjectClass.name)}</h3>
                 )}
               </div>
             ) : null}
@@ -6829,7 +8635,7 @@ function SubjectClassWorkPage({
                     {editingResourceId === selectedResource.id ? (
                       <button className="secondary-action" type="button" onClick={saveResourceChanges} disabled={!hasUnsavedResourceChanges}>
                         <Save size={16} />
-                        Save
+                        {selectedResource.type === "test" ? "Done" : "Save"}
                       </button>
                     ) : (
                       <button className="secondary-action" type="button" onClick={() => setEditingResourceId(selectedResource.id)}>
@@ -6876,8 +8682,9 @@ function SubjectClassWorkPage({
                         <TestResourceView
                           test={selectedResource}
                           scale={assessmentScales.find((scale) => scale.id === selectedResource.scaleId)}
-                          accessLevel={accessLevel}
-                          activeStudentId={activeStudentId}
+                          accessLevel={effectiveAccessLevel}
+                          activeStudentId={effectiveStudentId}
+                          students={subjectClassStudents}
                           onBeginTest={canCreateSchoolWork ? () => {
                             setPreviewTest({ ...selectedResource, lobbyEnabled: false });
                             setPreviewSubmission({ studentId: "preview", answers: {}, startedAt: new Date().toISOString(), lastSavedAt: new Date().toISOString() });
@@ -6946,26 +8753,18 @@ function SubjectClassWorkPage({
                   onEdit={() => canGradeSchoolWork ? setEditingAssessmentId(selectedAssessment.id) : undefined}
                   onRemove={() => canGradeSchoolWork ? removeAssessment(selectedAssessment.id) : undefined}
                   onGradeChange={(studentId, patch) => updateAssessmentGrade(selectedAssessment.id, studentId, patch)}
-                  mode={accessLevel === "student" ? "student-submit" : "grade"}
-                  activeStudentId={activeStudentId}
+                  mode={effectiveAccessLevel === "student" ? "student-submit" : "grade"}
+                  activeStudentId={effectiveStudentId}
                 />
               )
             ) : (
               <>
-                {oneLevelUpTargetId || canCreateSchoolWork ? (
-                  <div className={`resource-save-row ${oneLevelUpTargetId ? "has-one-level-up" : ""}`}>
-                    {oneLevelUpTargetId ? (
-                      <button className="resource-one-level-up" type="button" onClick={() => selectTreeFolder(oneLevelUpTargetId)}>
-                        <ArrowLeft size={16} />
-                        <span>One level up</span>
-                      </button>
-                    ) : <span />}
-                    {canCreateSchoolWork ? (
-                      <button className="secondary-action" type="button" onClick={saveResourceChanges} disabled={!hasUnsavedResourceChanges}>
-                        <Save size={16} />
-                        Save resource changes
-                      </button>
-                    ) : null}
+                {oneLevelUpTargetId ? (
+                  <div className="resource-save-row has-one-level-up">
+                    <button className="resource-one-level-up" type="button" onClick={() => selectTreeFolder(oneLevelUpTargetId)}>
+                      <ArrowLeft size={16} />
+                      <span>One level up</span>
+                    </button>
                   </div>
                 ) : null}
                 {canCreateSchoolWork && (showFolderResourcePicker || (childFolders.length === 0 && folderResources.length === 0 && folderAssessments.length === 0)) ? (
@@ -6981,7 +8780,7 @@ function SubjectClassWorkPage({
                       </article>
                     ))}
                     {folderResources.map((resource) => (
-                      <article className="resource-list-item folder-resource-item resource-preview-item" key={resource.id}>
+                      <article className={`resource-list-item folder-resource-item resource-preview-item${resource.hidden ? " resource-hidden-item" : ""}`} key={resource.id}>
                         <button type="button" onClick={() => selectResource(resource)}>
                           {resource.type === "note" ? <FileText size={22} /> : resource.type === "link" ? <Link2 size={22} /> : resource.type === "test" ? <CheckSquare size={22} /> : <Image size={22} />}
                           <span>
@@ -6990,13 +8789,23 @@ function SubjectClassWorkPage({
                               {resource.type === "link"
                                 ? resource.url || "No URL added"
                                 : resource.type === "test"
-                                  ? `${resource.dueDate || "No due date"} · ${resource.questions?.length ?? 0} questions`
+                                  ? `${resource.dueDate ? formatDate(resource.dueDate) : "No due date"} · ${resource.questions?.length ?? 0} questions`
                                 : resource.type === "picture"
                                   ? resource.description || "No description yet"
                                   : resource.body || "No note content yet"}
                             </small>
                           </span>
                         </button>
+                        {canCreateSchoolWork ? (
+                          <button
+                            className={`resource-visibility-toggle${resource.hidden ? " resource-visibility-toggle--hidden" : ""}`}
+                            type="button"
+                            title={resource.hidden ? "Hidden from students — click to show" : "Visible to students — click to hide"}
+                            onClick={() => updateResource(resource.id, { hidden: !resource.hidden })}
+                          >
+                            {resource.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        ) : null}
                       </article>
                     ))}
                     {folderAssessments.map((assessment) => (
@@ -7005,7 +8814,7 @@ function SubjectClassWorkPage({
                           <ClipboardCheck size={22} />
                           <span>
                             <strong>{assessment.title}</strong>
-                            <small>{assessment.date} · {assessment.format} · {assessment.requiresTurnIn ? "Turn-in required" : "No turn-in required"}</small>
+                            <small>{formatAssessmentDate(assessment)} · {assessment.format} · {assessment.requiresTurnIn ? "Turn-in required" : "No turn-in required"}</small>
                           </span>
                         </button>
                       </article>
@@ -7099,7 +8908,7 @@ function canManageSchool(profile: AdminProfile | null, schoolId: string, userEma
   }
 
   const normalizedEmail = userEmail?.toLowerCase();
-  return Boolean(normalizedEmail && school?.adminEmails?.map((adminEmail) => adminEmail.toLowerCase()).includes(normalizedEmail));
+  return Boolean(normalizedEmail && school && getSchoolAdminEmails(school).includes(normalizedEmail));
 }
 
 function canTeachAnySubjectClass(school: School, userEmail?: string | null) {
@@ -7111,7 +8920,12 @@ function canTeachSubjectClass(school: School, subjectClass: SubjectClass, userEm
   if (!normalizedEmail || !subjectClass.teacherName) {
     return false;
   }
-  return school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && member.name === subjectClass.teacherName && hasStaffCategory(member, "Teacher"));
+  return school.staff.some((member) => (
+    member.email?.toLowerCase() === normalizedEmail
+    && member.name === subjectClass.teacherName
+    && hasStaffCategory(member, "Teacher")
+    && !isStaffAccountDisabled(member)
+  ));
 }
 
 function getStaffCategories(member: StaffMember): StaffCategory[] {
@@ -7121,6 +8935,26 @@ function getStaffCategories(member: StaffMember): StaffCategory[] {
 
 function hasStaffCategory(member: StaffMember, category: StaffCategory) {
   return getStaffCategories(member).includes(category);
+}
+
+function staffCanAccessAdminPage(member: StaffMember) {
+  return member.canAccessAdminPage ?? hasStaffCategory(member, "Administration");
+}
+
+function isStaffAccountDisabled(member: StaffMember) {
+  return Boolean(member.accountDisabled) && !staffCanAccessAdminPage(member);
+}
+
+function getStaffEmail(member?: StaffMember) {
+  return member?.email?.trim().toLowerCase() ?? "";
+}
+
+function getStaffAdminEmails(staff: StaffMember[]) {
+  return mergeUnique(staff.filter(staffCanAccessAdminPage).map(getStaffEmail).filter(Boolean));
+}
+
+function getSchoolAdminEmails(school: School) {
+  return getStaffAdminEmails(school.staff ?? []);
 }
 
 function getSchoolWorkIdentity(school: School, userEmail: string | null, profile: AdminProfile | null): SchoolWorkIdentity | null {
@@ -7141,7 +8975,7 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
 
   if (canSimulate && simulateRole === "staff" && simulateId) {
     const staffMember = school.staff.find((member) => member.email?.toLowerCase() === simulateId.toLowerCase());
-    if (staffMember) {
+    if (staffMember && !isStaffAccountDisabled(staffMember)) {
       const isTeacher = hasStaffCategory(staffMember, "Teacher");
       return {
         role: isTeacher ? "teacher" : "viewer",
@@ -7155,7 +8989,7 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
 
   if (canSimulate && simulateRole === "student" && simulateId) {
     const student = school.students.find((item) => item.id === simulateId);
-    if (student) {
+    if (student && !student.accountDisabled) {
       return {
         role: "student",
         label: `${student.firstName} ${student.lastName}`,
@@ -7186,8 +9020,16 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
     return null;
   }
 
+  if (getSchoolAdminEmails(school).includes(normalizedEmail)) {
+    return {
+      role: "admin",
+      label: "School admin",
+      subjectClasses,
+    };
+  }
+
   const staffMember = school.staff.find((member) => member.email?.toLowerCase() === normalizedEmail);
-  if (staffMember) {
+  if (staffMember && !isStaffAccountDisabled(staffMember)) {
     const isTeacher = hasStaffCategory(staffMember, "Teacher");
     return {
       role: isTeacher ? "teacher" : "viewer",
@@ -7199,7 +9041,7 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
   }
 
   const student = school.students.find((item) => item.email?.toLowerCase() === normalizedEmail);
-  if (student) {
+  if (student && !student.accountDisabled) {
     return {
       role: "student",
       label: `${student.firstName} ${student.lastName}`,
@@ -7286,6 +9128,21 @@ function formatGradeLevel(gradeLevel?: SchoolGradeLevel) {
   return `${grade}${gradeLevel.year ? ` (${gradeLevel.year})` : ""}`;
 }
 
+function formatSubjectClassGradeLevel(gradeLevel?: SchoolGradeLevel) {
+  if (!gradeLevel) {
+    return "";
+  }
+  const grade = gradeLevel.grade.trim();
+  const gradeLabel = grade.toLowerCase().startsWith("grade ") ? grade : `Grade ${grade || "Grade"}`;
+  return `${gradeLabel}${gradeLevel.year ? ` - ${gradeLevel.year}` : ""}`;
+}
+
+function formatSchoolWorkClassTitle(value: string) {
+  return value
+    .replace(/^Grade\b/i, "Class")
+    .replace(/ - Grade\b/gi, " - Class");
+}
+
 function slugifyGradeLevel(grade: string, year: string) {
   const slug = slugifySchoolName(`${grade}-${year}`);
   return slug ? `grade-${slug}` : `grade-${Date.now()}`;
@@ -7356,18 +9213,48 @@ async function refreshSchools(
 }
 
 function useSchoolDocumentBrand(school: School | null) {
-  const schoolName = school?.name;
-  const schoolLogoUrl = school?.logoUrl;
-
   useEffect(() => {
-    if (!schoolName) {
+    if (!school) {
       setDocumentBrand();
-      return;
+      return undefined;
     }
 
-    setDocumentBrand(schoolName, schoolLogoUrl);
-    return () => setDocumentBrand();
-  }, [schoolLogoUrl, schoolName]);
+    const title = school.name || "School";
+    const logoUrl = school.logoUrl;
+    let cancelled = false;
+
+    if (logoUrl) {
+      compositeOnWhite(logoUrl, 64).then((dataUrl) => {
+        if (!cancelled) setDocumentBrand(title, dataUrl);
+      });
+    } else {
+      setDocumentBrand(title);
+    }
+
+    return () => {
+      cancelled = true;
+      setDocumentBrand();
+    };
+  }, [school]);
+}
+
+function compositeOnWhite(src: string, size: number): Promise<string> {
+  return new Promise((resolve) => {
+    const img = document.createElement("img");
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(img, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(src);
+    img.crossOrigin = "anonymous";
+    img.src = src;
+  });
 }
 
 function setDocumentBrand(title = "EduLink Africa", faviconHref = "/edulink-logo.png") {
@@ -7380,7 +9267,7 @@ function setDocumentBrand(title = "EduLink Africa", faviconHref = "/edulink-logo
     document.head.appendChild(favicon);
   }
 
-  favicon.type = faviconHref.startsWith("data:") ? faviconHref.slice(5, faviconHref.indexOf(";")) || "image/png" : "image/png";
+  favicon.type = "image/png";
   favicon.href = faviconHref;
 }
 
@@ -7496,13 +9383,13 @@ function EditorPanel({ title, children }: { title: string; children: React.React
   );
 }
 
-function TextInput({ label, value, onChange, icon }: { label: string; value: string; onChange: (value: string) => void; icon?: React.ReactNode }) {
+function TextInput({ label, value, onChange, icon, disabled }: { label: string; value: string; onChange: (value: string) => void; icon?: React.ReactNode; disabled?: boolean }) {
   return (
     <label className="field-label">
       {label}
       <span className="input-shell">
         {icon}
-        <input value={value} onChange={(event) => onChange(event.target.value)} />
+        <input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
       </span>
     </label>
   );
@@ -7526,10 +9413,10 @@ function TextArea({ label, value, onChange }: { label: string; value: string; on
   );
 }
 
-function CheckboxInput({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function CheckboxInput({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
   return (
     <label className="checkbox-field">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       <span>{label}</span>
     </label>
   );
@@ -7679,11 +9566,13 @@ function ImageUpload({
   value,
   onChange,
   variant = "wide",
+  hideLabel = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   variant?: "wide" | "square" | "hero" | "logo" | "strictSquare";
+  hideLabel?: boolean;
 }) {
   const [status, setStatus] = useState(
     variant === "logo"
@@ -7707,7 +9596,7 @@ function ImageUpload({
             ? { cropSquare: true, maxWidth: 512, maxHeight: 512, quality: 0.82 }
             : { maxWidth: 1600, maxHeight: 900, quality: 0.84 });
       onChange(nextImage);
-      setStatus("Image ready. Save changes to publish it.");
+      setStatus("Image uploaded successfully.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not prepare this image.");
     }
@@ -7715,7 +9604,7 @@ function ImageUpload({
 
   return (
     <div className="field-label image-upload-field">
-      <span>{label}</span>
+      {hideLabel ? null : <span>{label}</span>}
       <div className="image-upload-control">
         <div className={`image-upload-preview ${variant === "square" || variant === "logo" || variant === "strictSquare" ? "square-image-preview" : ""} ${variant === "hero" ? "hero-image-preview" : ""}`}>
           {value ? <img src={value} alt="" /> : <ImagePlus size={24} />}
@@ -8033,28 +9922,75 @@ function LoadingContent() {
 }
 
 function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
+  const parsed = parseDisplayDate(date);
+  if (!parsed) {
+    return date;
+  }
+  return new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(parsed);
 }
 
 function formatDateTime(date: string) {
+  const parsed = parseDisplayDate(date);
+  if (!parsed) {
+    return date;
+  }
   return new Intl.DateTimeFormat("en", {
-    day: "2-digit",
-    month: "short",
+    month: "long",
+    day: "numeric",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(date));
+  }).format(parsed);
 }
 
 function formatDateTimeWithSeconds(date: string) {
+  const parsed = parseDisplayDate(date);
+  if (!parsed) {
+    return date;
+  }
   return new Intl.DateTimeFormat("en", {
-    day: "2-digit",
-    month: "short",
+    month: "long",
+    day: "numeric",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  }).format(new Date(date));
+  }).format(parsed);
+}
+
+function getAssessmentDueDate(assessment: Assessment) {
+  if (!assessment.date || !assessment.dueTime) {
+    return null;
+  }
+  const [year, month, day] = assessment.date.split("-").map(Number);
+  const [hour, minute] = assessment.dueTime.split(":").map(Number);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) {
+    return null;
+  }
+  return new Date(year, month - 1, day, hour, minute);
+}
+
+function formatAssessmentDate(assessment: Assessment) {
+  const formattedDate = formatDate(assessment.date);
+  if (!assessment.requiresTurnIn || !assessment.dueTime) {
+    return formattedDate;
+  }
+  const dueDate = getAssessmentDueDate(assessment);
+  if (!dueDate) {
+    return formattedDate;
+  }
+  return `${formattedDate}, ${new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(dueDate)}`;
+}
+
+function parseDisplayDate(date: string) {
+  if (!date) {
+    return null;
+  }
+  const dateOnlyMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : new Date(date);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function formatDuration(milliseconds: number) {

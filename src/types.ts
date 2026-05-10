@@ -19,6 +19,8 @@ export type StaffMember = {
   categories?: Array<"Teacher" | "Administration" | "Other">;
   phone?: string;
   email?: string;
+  canAccessAdminPage?: boolean;
+  accountDisabled?: boolean;
   photoUrl?: string;
   visibleOnHomePage?: boolean;
   visibleOnStaffPage?: boolean;
@@ -44,6 +46,7 @@ export type Student = {
   lastName: string;
   classId: string;
   email?: string;
+  accountDisabled?: boolean;
   photoUrl?: string;
   dateOfBirth?: string;
   gender?: string;
@@ -74,6 +77,7 @@ export type Subject = {
 export type SubjectClass = {
   id: string;
   name: string;
+  nameOverride?: boolean;
   subjectId: string;
   gradeLevelId?: string;
   baseClassId?: string;
@@ -127,11 +131,19 @@ export type SchoolWorkSettings = {
   knownGlobalAssessmentScaleIds?: string[];
   customAssessmentScales: AssessmentScale[];
   allowStudentMessaging?: boolean;
+  disableTeacherCustomScales?: boolean;
 };
 
 export type LoginSettings = {
   emailPasswordEnabled: boolean;
   emailLinkEnabled: boolean;
+};
+
+export type SubmissionFile = {
+  id: string;
+  name: string;
+  type: string;
+  dataUrl: string;
 };
 
 export type AssessmentGrade = {
@@ -140,6 +152,8 @@ export type AssessmentGrade = {
   score?: string;
   feedback?: string;
   submitted?: boolean;
+  submissionText?: string;
+  submissionFiles?: SubmissionFile[];
   gradedAt?: string;
   gradedBy?: string;
 };
@@ -148,6 +162,7 @@ export type Assessment = {
   id: string;
   title: string;
   date: string;
+  dueTime?: string;
   requiresTurnIn: boolean;
   format: string;
   scaleId: string;
@@ -168,6 +183,7 @@ export type SubjectResource = {
   type: "note" | "link" | "picture" | "test";
   title: string;
   folderId?: string;
+  hidden?: boolean;
   body?: string;
   url?: string;
   imageDataUrl?: string;
@@ -231,6 +247,10 @@ export type SubjectClassAnnouncement = {
   title: string;
   body: string;
   createdAt: string;
+  readConfirmations?: Array<{
+    studentId: string;
+    confirmedAt: string;
+  }>;
 };
 
 export type AboutCategory = {
@@ -247,10 +267,16 @@ export type AboutPage = {
   body: string;
 };
 
+export type SchoolSubscription = {
+  plan: "free" | "per-student";
+  pricePerStudent?: number;
+};
+
 export type School = {
   id: string;
   name: string;
   type: string;
+  subscription?: SchoolSubscription;
   tagline: string;
   country: string;
   city: string;
@@ -276,6 +302,8 @@ export type School = {
   subjects: Subject[];
   subjectClasses?: SubjectClass[];
   schoolWorkSettings?: SchoolWorkSettings;
+  remarks?: Remark[];
+  remarkSettings?: SchoolRemarkSettings;
   chatMessages?: SchoolChatMessage[];
   supportTickets?: SupportTicket[];
   aboutCategories: AboutCategory[];
@@ -314,14 +342,38 @@ export type GlobalAboutConfig = {
   updatedAt?: string;
 };
 
+export type RemarkCategory = {
+  id: string;
+  name: string;
+  parentId?: string;
+};
+
+export type Remark = {
+  id: string;
+  studentId: string;
+  categoryId?: string;
+  body?: string;
+  subjectClassId?: string;
+  subjectClassLabel?: string;
+  createdAt: string;
+  createdBy?: string;
+};
+
+export type SchoolRemarkSettings = {
+  disabledGlobalCategoryIds: string[];
+  customCategories: RemarkCategory[];
+};
+
 export type GlobalSchoolWorkConfig = {
   assessmentScales: AssessmentScale[];
+  remarkCategories?: RemarkCategory[];
   updatedAt?: string;
 };
 
 export type AdminProfile = {
   uid: string;
   email?: string;
+  name?: string;
   schoolIds: string[];
   superAdmin: boolean;
 };
