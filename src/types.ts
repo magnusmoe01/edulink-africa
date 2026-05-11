@@ -49,6 +49,7 @@ export type Student = {
   accountDisabled?: boolean;
   photoUrl?: string;
   dateOfBirth?: string;
+  enrolledAt?: string;
   gender?: string;
   description?: string;
   guardians?: Guardian[];
@@ -74,6 +75,15 @@ export type Subject = {
   studentIds?: string[];
 };
 
+export type Topic = {
+  id: string;
+  name: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  folderId?: string;
+};
+
 export type SubjectClass = {
   id: string;
   name: string;
@@ -90,6 +100,7 @@ export type SubjectClass = {
   resourceFolders?: ResourceFolder[];
   resources?: SubjectResource[];
   announcements?: SubjectClassAnnouncement[];
+  topics?: Topic[];
 };
 
 export type SubjectClassStudentActivity = {
@@ -168,6 +179,8 @@ export type Assessment = {
   scaleId: string;
   folderId?: string;
   description?: string;
+  topicIds?: string[];
+  hidden?: boolean;
   grades: AssessmentGrade[];
 };
 
@@ -180,13 +193,16 @@ export type ResourceFolder = {
 
 export type SubjectResource = {
   id: string;
-  type: "note" | "link" | "picture" | "test";
+  type: "note" | "link" | "picture" | "test" | "file";
   title: string;
   folderId?: string;
   hidden?: boolean;
   body?: string;
   url?: string;
   imageDataUrl?: string;
+  fileDataUrl?: string;
+  fileName?: string;
+  fileType?: string;
   description?: string;
   dueDate?: string;
   scaleId?: string;
@@ -268,8 +284,43 @@ export type AboutPage = {
 };
 
 export type SchoolSubscription = {
-  plan: "free" | "per-student";
+  plan: "free" | "fixed" | "per-student";
+  interval?: "monthly" | "yearly";
+  fixedPrice?: number;
   pricePerStudent?: number;
+};
+
+export type PaymentLineItem = {
+  description: string;
+  unitPrice: number;
+  days?: number;
+  daysInPeriod?: number;
+  amount: number;
+};
+
+export type PaymentRecord = {
+  id: string;
+  paidAt: string;
+  amount: number;
+  note?: string;
+};
+
+export type PaymentComment = {
+  id: string;
+  body: string;
+  createdAt: string;
+};
+
+export type SchoolPayment = {
+  id: string;
+  period: string;
+  dueDate: string;
+  status: "upcoming" | "outstanding" | "partial" | "paid";
+  totalAmount: number;
+  lineItems: PaymentLineItem[];
+  records: PaymentRecord[];
+  comments: PaymentComment[];
+  generatedAt: string;
 };
 
 export type School = {
@@ -306,6 +357,7 @@ export type School = {
   remarkSettings?: SchoolRemarkSettings;
   chatMessages?: SchoolChatMessage[];
   supportTickets?: SupportTicket[];
+  payments?: SchoolPayment[];
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
   updatedAt?: string;
@@ -319,6 +371,8 @@ export type SupportTicket = {
   createdAt: string;
   createdBy?: string;
   response?: string;
+  respondedBy?: string;
+  respondedAt?: string;
   updatedAt?: string;
 };
 
@@ -333,7 +387,7 @@ export type SchoolChatMessage = {
 };
 
 export type GlobalAboutPage = AboutPage & {
-  kind?: "richText" | "staffDirectory";
+  kind?: "richText" | "staffDirectory" | "contact";
 };
 
 export type GlobalAboutConfig = {

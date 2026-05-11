@@ -4,15 +4,20 @@ import {
   ArrowLeft,
   Bold,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronRight,
+  CircleDollarSign,
   ExternalLink,
   HelpCircle,
   LogOut,
+  Paperclip,
   ClipboardCheck,
   CheckSquare,
+  CheckCircle2,
   Clock,
   CreditCard,
+  Receipt,
   Eye,
   EyeOff,
   FileText,
@@ -98,13 +103,17 @@ import {
   updateSuperAdminProfile,
 } from "./lib/schools";
 import { auth, createAuthUser, hasFirebaseConfig } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, Remark, RemarkCategory, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolRemarkSettings, SchoolSubscription, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource, SubmissionFile, SupportTicket } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, PaymentComment, PaymentLineItem, PaymentRecord, Remark, RemarkCategory, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolPayment, SchoolRemarkSettings, SchoolSubscription, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource, SubmissionFile, SupportTicket, Topic } from "./types";
 
-type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "schoolWorkSettings" | "loginSettings";
-type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork" | "settings";
+type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "loginSettings" | "billing";
+type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork" | "settings" | "billing";
 
 const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
 const MAX_IMAGE_UPLOAD_LABEL = "1MB";
+const MAX_FILE_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_UPLOAD_LABEL = "5MB";
+const ACCEPTED_FILE_TYPES = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx";
+const ACCEPTED_FILE_MIME_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"];
 const schoolCache = new Map<string, School>();
 let globalAboutCache: GlobalAboutConfig | null = null;
 const EMAIL_LINK_STORAGE_KEY = "edulink-email-link-address";
@@ -144,7 +153,7 @@ const subjectColorOptions = [
 const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "profile", label: "School profile" },
   { id: "contact", label: "Contact details" },
-  { id: "about", label: "About" },
+  { id: "about", label: "Website pages" },
   { id: "news", label: "News" },
   { id: "calendar", label: "Calendar" },
   { id: "staff", label: "Staff and administrators" },
@@ -154,9 +163,9 @@ const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "subjectClasses", label: "Subject classes" },
   { id: "subjects", label: "Subjects" },
   { id: "students", label: "Students" },
-  { id: "schoolWorkSettings", label: "School work settings" },
   { id: "schoolWork", label: "Subject class pages" },
   { id: "loginSettings", label: "Login format" },
+  { id: "billing", label: "Billing" },
 ];
 
 const editorCategories: Array<{
@@ -180,8 +189,8 @@ const editorCategories: Array<{
   {
     id: "academics",
     label: "Academics",
-    description: "Grades, classes, subject classes, subject catalog, and assessment settings.",
-    sections: ["grades", "classes", "subjectClasses", "subjects", "schoolWorkSettings"],
+    description: "Grades, classes, subject classes, and subject catalog.",
+    sections: ["grades", "classes", "subjectClasses", "subjects"],
   },
   {
     id: "schoolWork",
@@ -194,6 +203,12 @@ const editorCategories: Array<{
     label: "Settings",
     description: "School-level access and platform preferences.",
     sections: ["loginSettings"],
+  },
+  {
+    id: "billing",
+    label: "Billing",
+    description: "Subscription plan, invoices, and payment history.",
+    sections: ["billing"],
   },
 ];
 
@@ -212,6 +227,7 @@ type Route =
   | { view: "schoolWorkPortal"; id: string }
   | { view: "about"; id: string }
   | { view: "aboutPage"; schoolId: string; pageSlug: string }
+  | { view: "globalCategoryPage"; schoolId: string; categoryId: string }
   | { view: "news"; id: string }
   | { view: "newsPage"; schoolId: string; newsSlug: string }
   | { view: "studentsGuardians"; id: string }
@@ -246,6 +262,9 @@ function parseRoute(): Route {
   }
   if (segments[0] && segments[1] === "for-students-and-guardians") {
     return { view: "studentsGuardians", id: segments[0] };
+  }
+  if (segments[0] && segments[1]) {
+    return { view: "globalCategoryPage", schoolId: segments[0], categoryId: segments[1] };
   }
   if (segments[0]) {
     return { view: "school", id: segments[0] };
@@ -289,6 +308,10 @@ function App() {
 
   if (route.view === "aboutPage") {
     return <AboutSinglePageView schoolId={route.schoolId} pageSlug={route.pageSlug} />;
+  }
+
+  if (route.view === "globalCategoryPage") {
+    return <GlobalCategoryPageView schoolId={route.schoolId} categoryId={route.categoryId} />;
   }
 
   if (route.view === "news") {
@@ -738,7 +761,6 @@ function LoginPage() {
             void submit();
           }}
         >
-          <TextInput label="Email" value={email} onChange={setEmail} />
           <div className="login-methods" role="radiogroup" aria-label="Login format">
             <button
               className={authMethod === "password" ? "active-login-method" : ""}
@@ -757,6 +779,7 @@ function LoginPage() {
               Email link
             </button>
           </div>
+          <TextInput label="Email" value={email} onChange={setEmail} />
           {authMethod === "password" ? (
             <label className="field-label">
               Password
@@ -1031,6 +1054,104 @@ function AboutSinglePageView({ schoolId, pageSlug }: { schoolId: string; pageSlu
   );
 }
 
+function GlobalCategoryPageView({ schoolId, categoryId }: { schoolId: string; categoryId: string }) {
+  const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
+  const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig | null>(() => globalAboutCache);
+
+  useEffect(() => {
+    void Promise.all([getSchool(schoolId), getGlobalAboutConfig()]).then(([remoteSchool, nextGlobalAbout]) => {
+      const nextSchool = getLocalSchool(schoolId) ?? remoteSchool;
+      schoolCache.set(schoolId, nextSchool);
+      globalAboutCache = nextGlobalAbout;
+      setSchool(nextSchool);
+      setGlobalAbout(nextGlobalAbout);
+    });
+  }, [schoolId]);
+  useSchoolDocumentBrand(school);
+
+  if (!school) {
+    return <PublicSchoolLoadingPage schoolId={schoolId} />;
+  }
+  if (!shouldShowPublicSchoolWebsite(school)) {
+    return <SchoolWebsiteHiddenRedirect />;
+  }
+  if (!globalAbout) {
+    return <SchoolLoadingPage school={school} />;
+  }
+
+  const globalCatMatch = globalAbout.categories.find((c) => c.id === categoryId);
+  const schoolCatMatch = (school.aboutCategories ?? []).find((c) => c.id === categoryId);
+  const category = globalCatMatch ?? schoolCatMatch;
+
+  const globalSlugs = new Set(globalAbout.pages.map((p) => p.slug));
+  const globalPages = globalAbout.pages.filter((p) => p.categoryId === categoryId);
+  const schoolCategoryPages = (school.aboutPages ?? []).filter((p) => !globalSlugs.has(p.slug) && p.categoryId === categoryId);
+  const allPages = globalCatMatch ? [...globalPages, ...schoolCategoryPages] : schoolCategoryPages;
+
+  const contactPage = globalPages.find((p) => p.kind === "contact");
+
+  return (
+    <main className="school-page">
+      <SchoolHeader school={school} currentPage={categoryId} globalCategories={globalAbout.categories} />
+      <section className="about-page-hero">
+        <p className="eyebrow">{school.name}</p>
+        <h1>{category?.title ?? categoryId}</h1>
+      </section>
+
+      {contactPage ? (
+        <section className="about-single-content school-contact-section">
+          <div className="school-contact-grid">
+            <div className="school-contact-item">
+              <h3>Address</h3>
+              <p>{school.address}</p>
+              <p>{school.city}, {school.country}</p>
+            </div>
+            <div className="school-contact-item">
+              <h3>Phone</h3>
+              <p><a href={`tel:${school.phone}`}>{school.phone}</a></p>
+            </div>
+            <div className="school-contact-item">
+              <h3>Email</h3>
+              <p><a href={`mailto:${school.email}`}>{school.email}</a></p>
+            </div>
+            {school.principal ? (
+              <div className="school-contact-item">
+                <h3>Principal</h3>
+                <p>{school.principal}</p>
+              </div>
+            ) : null}
+          </div>
+          {contactPage.body ? (
+            <div className="about-single-body" dangerouslySetInnerHTML={{ __html: contactPage.body }} />
+          ) : null}
+        </section>
+      ) : allPages.length > 0 ? (
+        <section className="about-page-layout">
+          <section className="about-category-section">
+            <div className="about-page-list">
+              {allPages.map((page) => (
+                <a href={`/${schoolId}/about/${page.slug}`} className="about-page-card" key={page.id}>
+                  <ChevronRight size={22} />
+                  <span>{page.title}</span>
+                </a>
+              ))}
+            </div>
+          </section>
+        </section>
+      ) : (
+        <section className="about-single-content">
+          <div className="empty-public-state">
+            <h2>No content yet</h2>
+            <p>This section has no pages published yet.</p>
+          </div>
+        </section>
+      )}
+
+      <SchoolFooter school={school} />
+    </main>
+  );
+}
+
 function StudentsGuardiansPage({ schoolId }: { schoolId: string }) {
   const [school, setSchool] = useState<School | null>(() => getCachedSchool(schoolId));
 
@@ -1241,9 +1362,12 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
       remarks={school.remarks ?? []}
       remarkSettings={school.remarkSettings}
       globalRemarkCategories={globalSchoolWork.remarkCategories ?? []}
+      schoolWorkSettings={school.schoolWorkSettings}
+      globalAssessmentScales={globalSchoolWork.assessmentScales ?? []}
       onOpen={setActiveSubjectClassId}
       onRemarksChange={(nextRemarks) => void saveNextRemarks(nextRemarks)}
       onStudentChange={(student) => void saveNextStudent(student)}
+      onSchoolWorkSettingsChange={(nextSettings) => void saveNextSchoolWorkSettings(nextSettings)}
     />
   );
 
@@ -1821,9 +1945,13 @@ function AdminPage({ schoolId }: { schoolId: string }) {
                             </div>
                             <p>{ticket.message}</p>
                             {ticket.response ? (
-                              <p className="support-ticket-response">
-                                <strong>Response:</strong> {ticket.response}
-                              </p>
+                              <div className="support-ticket-response">
+                                <div className="support-ticket-response-meta">
+                                  <strong>{ticket.respondedBy ?? "Support"}</strong>
+                                  {ticket.respondedAt ? <span>{formatDateTime(ticket.respondedAt)}</span> : null}
+                                </div>
+                                <p>{ticket.response}</p>
+                              </div>
                             ) : null}
                           </article>
                         ))}
@@ -1920,7 +2048,7 @@ function SuperAdminPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
   const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
-  const [superAdminView, setSuperAdminView] = useState<"schools" | "supportTickets" | "globalPages" | "schoolWorkSettings" | "superAdmins" | "subscriptions">("schools");
+  const [superAdminView, setSuperAdminView] = useState<"schools" | "supportTickets" | "globalPages" | "schoolWorkSettings" | "superAdmins" | "subscriptions" | "payments">("schools");
   const [query, setQuery] = useState("");
   const [newSuperAdminEmail, setNewSuperAdminEmail] = useState("");
   const [newSuperAdminName, setNewSuperAdminName] = useState("");
@@ -1930,6 +2058,7 @@ function SuperAdminPage() {
   const [editSuperAdminDraft, setEditSuperAdminDraft] = useState<{ name: string; email: string }>({ name: "", email: "" });
   const [editingSchoolUrlId, setEditingSchoolUrlId] = useState<string | null>(null);
   const [schoolUrlDraft, setSchoolUrlDraft] = useState("");
+  const [managingSchoolId, setManagingSchoolId] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading...");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2159,6 +2288,17 @@ function SuperAdminPage() {
     await refreshSchools(setSchools, setStatus);
   };
 
+  const updatePayment = async (schoolId: string, payment: SchoolPayment) => {
+    const school = schools.find((item) => item.id === schoolId);
+    if (!school) return;
+    const existing = school.payments ?? [];
+    const nextPayments = existing.some((p) => p.id === payment.id)
+      ? existing.map((p) => (p.id === payment.id ? payment : p))
+      : [...existing, payment];
+    await saveSchool({ ...school, payments: nextPayments });
+    await refreshSchools(setSchools, setStatus);
+  };
+
   const logout = async () => {
     if (auth) {
       await signOut(auth);
@@ -2265,6 +2405,14 @@ function SuperAdminPage() {
               <CreditCard size={18} />
               Subscriptions
             </button>
+            <button
+              className={superAdminView === "payments" ? "active-superadmin-nav" : ""}
+              type="button"
+              onClick={() => setSuperAdminView("payments")}
+            >
+              <Receipt size={18} />
+              Payments
+            </button>
           </nav>
         </aside>
 
@@ -2274,9 +2422,11 @@ function SuperAdminPage() {
           ) : superAdminView === "schoolWorkSettings" ? (
             <GlobalSchoolWorkEditor config={globalSchoolWork} onChange={setGlobalSchoolWork} onSubmit={saveGlobalSchoolWork} />
           ) : superAdminView === "supportTickets" ? (
-            <SupportTicketsPanel schools={schools} onUpdateTicket={(schoolId, ticketId, patch) => void updateSupportTicket(schoolId, ticketId, patch)} />
+            <SupportTicketsPanel schools={schools} respondedBy={profile?.name ?? adminUser?.email ?? undefined} onUpdateTicket={(schoolId, ticketId, patch) => void updateSupportTicket(schoolId, ticketId, patch)} />
           ) : superAdminView === "subscriptions" ? (
             <SubscriptionsPanel schools={schools} onUpdate={updateSubscription} />
+          ) : superAdminView === "payments" ? (
+            <PaymentsPanel schools={schools} onUpdatePayment={(schoolId, payment) => updatePayment(schoolId, payment)} />
           ) : superAdminView === "superAdmins" ? (
             <EditorPanel title="Superadmins">
               {superAdmins.length > 0 ? (
@@ -2350,6 +2500,11 @@ function SuperAdminPage() {
               </div>
 
               <section className="school-directory" aria-label="All schools">
+                {status === "Loading..." ? (
+                  <div className="school-directory-loading">
+                    <span className="spinner" />
+                  </div>
+                ) : null}
                 {filteredSchools.map((school) => (
                   <article className="school-directory-row" key={school.id}>
                     <div className="school-directory-main">
@@ -2389,28 +2544,46 @@ function SuperAdminPage() {
                         <LayoutDashboard size={18} />
                         Simulate admin
                       </button>
-                      {editingSchoolUrlId === school.id ? (
-                        <>
-                          <button className="secondary-action" type="button" onClick={() => void saveSchoolUrl(school)}>
-                            Save URL
-                          </button>
-                          <button className="remove-button" type="button" onClick={() => setEditingSchoolUrlId(null)}>
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button className="secondary-action" type="button" onClick={() => startEditSchoolUrl(school)}>
-                          Edit URL
-                        </button>
-                      )}
                       <button
-                        className="remove-button"
+                        className={`secondary-action school-manage-btn${managingSchoolId === school.id ? " school-manage-btn-active" : ""}`}
                         type="button"
-                        onClick={() => void removeSchool(school)}
+                        onClick={() => {
+                          setManagingSchoolId(managingSchoolId === school.id ? null : school.id);
+                          setEditingSchoolUrlId(null);
+                        }}
                       >
-                        Delete
+                        Manage
                       </button>
                     </div>
+                    {managingSchoolId === school.id ? (
+                      <div className="school-manage-panel">
+                        {editingSchoolUrlId === school.id ? (
+                          <>
+                            <span className="school-directory-url-edit">
+                              /
+                              <input
+                                value={schoolUrlDraft}
+                                onChange={(event) => setSchoolUrlDraft(slugifySchoolName(event.target.value))}
+                                aria-label={`URL slug for ${school.name}`}
+                              />
+                            </span>
+                            <button className="secondary-action" type="button" onClick={() => void saveSchoolUrl(school)}>
+                              Save URL
+                            </button>
+                            <button className="remove-button" type="button" onClick={() => setEditingSchoolUrlId(null)}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button className="secondary-action" type="button" onClick={() => startEditSchoolUrl(school)}>
+                            Edit URL
+                          </button>
+                        )}
+                        <button className="remove-button" type="button" onClick={() => void removeSchool(school)}>
+                          Delete school
+                        </button>
+                      </div>
+                    ) : null}
                   </article>
                 ))}
                 {filteredSchools.length === 0 ? (
@@ -2430,9 +2603,11 @@ function SuperAdminPage() {
 
 function SupportTicketsPanel({
   schools,
+  respondedBy,
   onUpdateTicket,
 }: {
   schools: School[];
+  respondedBy?: string;
   onUpdateTicket: (schoolId: string, ticketId: string, patch: Partial<SupportTicket>) => void;
 }) {
   const tickets = schools
@@ -2499,7 +2674,7 @@ function SupportTicketsPanel({
                       <button
                         className="secondary-action"
                         type="button"
-                        onClick={() => onUpdateTicket(school.id, ticket.id, { response: responseDraft.trim() || undefined })}
+                        onClick={() => onUpdateTicket(school.id, ticket.id, { response: responseDraft.trim() || undefined, respondedBy: respondedBy, respondedAt: responseDraft.trim() ? new Date().toISOString() : undefined })}
                       >
                         Save response
                       </button>
@@ -2526,10 +2701,15 @@ function SubscriptionsPanel({
   onUpdate: (schoolId: string, subscription: SchoolSubscription) => Promise<void>;
 }) {
   const freeCount = schools.filter((s) => !s.subscription || s.subscription.plan === "free").length;
-  const paidCount = schools.filter((s) => s.subscription?.plan === "per-student").length;
-  const totalRevenue = schools.reduce((sum, s) => {
-    if (s.subscription?.plan === "per-student" && s.subscription.pricePerStudent) {
-      return sum + s.students.length * s.subscription.pricePerStudent;
+  const paidCount = schools.filter((s) => s.subscription && s.subscription.plan !== "free").length;
+  const totalMonthlyRevenue = schools.reduce((sum, s) => {
+    if (!s.subscription) return sum;
+    if (s.subscription.plan === "per-student" && s.subscription.pricePerStudent) {
+      const price = s.subscription.interval === "yearly" ? s.subscription.pricePerStudent / 12 : s.subscription.pricePerStudent;
+      return sum + s.students.filter((st) => !st.accountDisabled).length * price;
+    }
+    if (s.subscription.plan === "fixed" && s.subscription.fixedPrice) {
+      return sum + (s.subscription.interval === "yearly" ? s.subscription.fixedPrice / 12 : s.subscription.fixedPrice);
     }
     return sum;
   }, 0);
@@ -2554,13 +2734,13 @@ function SubscriptionsPanel({
           <span className="subscription-summary-sub">schools</span>
         </div>
         <div className="subscription-summary-card">
-          <span className="subscription-summary-label">Pay per student</span>
+          <span className="subscription-summary-label">Paid plans</span>
           <strong className="subscription-summary-value">{paidCount}</strong>
           <span className="subscription-summary-sub">schools</span>
         </div>
         <div className="subscription-summary-card subscription-summary-revenue">
           <span className="subscription-summary-label">Monthly revenue</span>
-          <strong className="subscription-summary-value">KES {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          <strong className="subscription-summary-value">{formatKES(totalMonthlyRevenue)}</strong>
           <span className="subscription-summary-sub">estimated</span>
         </div>
       </div>
@@ -2571,18 +2751,26 @@ function SubscriptionsPanel({
               <th>School</th>
               <th>Students</th>
               <th>Plan</th>
-              <th>Price / student</th>
-              <th>Monthly total</th>
+              <th>Interval</th>
+              <th>Price</th>
+              <th>Period total</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {schools.map((school) => {
               const sub = school.subscription ?? { plan: "free" as const };
-              const isPaid = sub.plan === "per-student";
-              const monthly = isPaid && sub.pricePerStudent ? school.students.length * sub.pricePerStudent : 0;
+              const isPaid = sub.plan !== "free";
+              const interval = sub.interval ?? "monthly";
               const isSaving = savingIds.has(school.id);
-              const draftPrice = draftPrices[school.id] ?? String(sub.pricePerStudent ?? "");
+              const draftPriceKey = school.id;
+              const activeStudents = school.students.filter((s) => !s.accountDisabled).length;
+              const periodTotal = sub.plan === "per-student" && sub.pricePerStudent
+                ? activeStudents * sub.pricePerStudent
+                : sub.plan === "fixed" && sub.fixedPrice ? sub.fixedPrice : 0;
+              const priceField = sub.plan === "per-student" ? "pricePerStudent" : "fixedPrice";
+              const priceValue = sub.plan === "per-student" ? sub.pricePerStudent : sub.plan === "fixed" ? sub.fixedPrice : undefined;
+              const draftPrice = draftPrices[draftPriceKey] ?? String(priceValue ?? "");
               return (
                 <tr key={school.id} className={isSaving ? "subscription-row-saving" : ""}>
                   <td>
@@ -2591,20 +2779,34 @@ function SubscriptionsPanel({
                       <small className="subscription-school-id">/{school.id}</small>
                     </div>
                   </td>
-                  <td>{school.students.length}</td>
+                  <td>{activeStudents}</td>
                   <td>
                     <select
                       className="subscription-plan-select"
                       value={sub.plan}
                       disabled={isSaving}
                       onChange={(e) => {
-                        const plan = e.target.value as "free" | "per-student";
-                        void save(school.id, { ...sub, plan });
+                        const plan = e.target.value as SchoolSubscription["plan"];
+                        void save(school.id, { plan, interval: sub.interval });
                       }}
                     >
                       <option value="free">Free</option>
-                      <option value="per-student">Pay per student</option>
+                      <option value="fixed">Fixed price</option>
+                      <option value="per-student">Per student</option>
                     </select>
+                  </td>
+                  <td>
+                    {isPaid ? (
+                      <select
+                        className="subscription-plan-select"
+                        value={interval}
+                        disabled={isSaving}
+                        onChange={(e) => void save(school.id, { ...sub, interval: e.target.value as "monthly" | "yearly" })}
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    ) : <span className="subscription-na">—</span>}
                   </td>
                   <td>
                     {isPaid ? (
@@ -2618,25 +2820,21 @@ function SubscriptionsPanel({
                           value={draftPrice}
                           placeholder="0.00"
                           disabled={isSaving}
-                          onChange={(e) => setDraftPrices((prev) => ({ ...prev, [school.id]: e.target.value }))}
+                          onChange={(e) => setDraftPrices((prev) => ({ ...prev, [draftPriceKey]: e.target.value }))}
                           onBlur={(e) => {
                             const price = parseFloat(e.target.value) || 0;
-                            setDraftPrices((prev) => { const next = { ...prev }; delete next[school.id]; return next; });
-                            void save(school.id, { ...sub, pricePerStudent: price });
+                            setDraftPrices((prev) => { const next = { ...prev }; delete next[draftPriceKey]; return next; });
+                            void save(school.id, { ...sub, [priceField]: price });
                           }}
                         />
-                        <span className="subscription-per-label">/ student</span>
+                        <span className="subscription-per-label">{sub.plan === "per-student" ? `/ student / ${interval === "yearly" ? "yr" : "mo"}` : `/ ${interval === "yearly" ? "yr" : "mo"}`}</span>
                       </div>
-                    ) : (
-                      <span className="subscription-na">—</span>
-                    )}
+                    ) : <span className="subscription-na">—</span>}
                   </td>
                   <td>
-                    {isPaid ? (
-                      <strong className="subscription-monthly-total">KES {monthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    ) : (
-                      <span className="subscription-na">—</span>
-                    )}
+                    {isPaid && periodTotal > 0 ? (
+                      <strong className="subscription-monthly-total">{formatKES(periodTotal)}</strong>
+                    ) : <span className="subscription-na">—</span>}
                   </td>
                   <td className="subscription-saving-cell">
                     {isSaving ? <span className="subscription-saving-spinner" aria-label="Saving…" /> : null}
@@ -2646,6 +2844,408 @@ function SubscriptionsPanel({
             })}
           </tbody>
         </table>
+      </div>
+    </EditorPanel>
+  );
+}
+
+function InvoiceView({ school, payment }: { school: School; payment: SchoolPayment }) {
+  const sub = school.subscription;
+  const paidAmount = getPaidAmount(payment);
+  const balance = payment.totalAmount - paidAmount;
+  return (
+    <div className="invoice-view">
+      <div className="invoice-header">
+        <div>
+          <h2 className="invoice-title">Invoice</h2>
+          <p className="invoice-period">{formatBillingPeriod(payment.period)}</p>
+        </div>
+        <div className="invoice-school-info">
+          <strong>{school.name}</strong>
+          {school.address ? <span>{school.address}</span> : null}
+          {school.email ? <span>{school.email}</span> : null}
+        </div>
+      </div>
+      <div className="invoice-meta">
+        <span><strong>Invoice ID:</strong> {payment.id}</span>
+        <span><strong>Due date:</strong> {payment.dueDate}</span>
+        <span><strong>Plan:</strong> {sub?.plan === "fixed" ? "Fixed price" : sub?.plan === "per-student" ? "Per student" : "Free"}{sub?.interval ? ` (${sub.interval})` : ""}</span>
+      </div>
+      <table className="invoice-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Unit price</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {payment.lineItems.map((item, i) => (
+            <tr key={i}>
+              <td>{item.description}</td>
+              <td>{formatKES(item.unitPrice)}</td>
+              <td>{formatKES(item.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="invoice-total-row">
+            <td colSpan={2}><strong>Total</strong></td>
+            <td><strong>{formatKES(payment.totalAmount)}</strong></td>
+          </tr>
+          {paidAmount > 0 ? (
+            <>
+              <tr>
+                <td colSpan={2}>Paid</td>
+                <td>{formatKES(paidAmount)}</td>
+              </tr>
+              <tr className={balance > 0 ? "invoice-balance-due" : "invoice-balance-clear"}>
+                <td colSpan={2}><strong>{balance > 0 ? "Balance due" : "Settled"}</strong></td>
+                <td><strong>{formatKES(Math.abs(balance))}</strong></td>
+              </tr>
+            </>
+          ) : null}
+        </tfoot>
+      </table>
+      {payment.records.length > 0 ? (
+        <div className="invoice-records">
+          <h4>Payment records</h4>
+          {payment.records.map((r) => (
+            <div key={r.id} className="invoice-record-row">
+              <span>{r.paidAt}</span>
+              <span>{formatKES(r.amount)}</span>
+              {r.note ? <span className="invoice-record-note">{r.note}</span> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PaymentsPanel({
+  schools,
+  onUpdatePayment,
+}: {
+  schools: School[];
+  onUpdatePayment: (schoolId: string, payment: SchoolPayment) => Promise<void>;
+}) {
+  const [filterStatus, setFilterStatus] = useState<"all" | SchoolPayment["status"]>("all");
+  const [activePaymentKey, setActivePaymentKey] = useState<string | null>(null);
+  const [newRecordAmount, setNewRecordAmount] = useState<Record<string, string>>({});
+  const [newRecordNote, setNewRecordNote] = useState<Record<string, string>>({});
+  const [newComment, setNewComment] = useState<Record<string, string>>({});
+  const [generating, setGenerating] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+
+  const allPayments = schools
+    .flatMap((school) => (school.payments ?? []).map((p) => ({ school, payment: { ...p, status: computePaymentStatus(p) } })))
+    .sort((a, b) => b.payment.period.localeCompare(a.payment.period));
+
+  const filtered = filterStatus === "all" ? allPayments : allPayments.filter(({ payment }) => payment.status === filterStatus);
+
+  const paidSchools = schools.filter((s) => s.subscription && s.subscription.plan !== "free");
+
+  const doSave = async (schoolId: string, payment: SchoolPayment) => {
+    const key = `${schoolId}:${payment.id}`;
+    setSaving((prev) => ({ ...prev, [key]: true }));
+    try {
+      await onUpdatePayment(schoolId, payment);
+    } finally {
+      setSaving((prev) => { const next = { ...prev }; delete next[key]; return next; });
+    }
+  };
+
+  const handleGenerate = async (school: School) => {
+    const interval = school.subscription?.interval ?? "monthly";
+    const period = getCurrentPeriod(interval);
+    const exists = (school.payments ?? []).some((p) => p.period === period);
+    if (exists) { alert(`Payment for ${formatBillingPeriod(period)} already exists.`); return; }
+    const payment = generatePayment(school, period);
+    if (!payment) return;
+    setGenerating((prev) => ({ ...prev, [school.id]: true }));
+    try {
+      await onUpdatePayment(school.id, payment);
+    } finally {
+      setGenerating((prev) => { const next = { ...prev }; delete next[school.id]; return next; });
+    }
+  };
+
+  const statusLabel = (s: SchoolPayment["status"]) => s === "upcoming" ? "Upcoming" : s === "outstanding" ? "Outstanding" : s === "partial" ? "Partial" : "Paid";
+
+  return (
+    <EditorPanel title="Payments">
+      <div className="payments-generate-row">
+        <strong>Generate current period invoice:</strong>
+        <div className="payments-generate-buttons">
+          {paidSchools.map((school) => (
+            <button
+              key={school.id}
+              className="secondary-action"
+              type="button"
+              disabled={generating[school.id]}
+              onClick={() => void handleGenerate(school)}
+            >
+              {school.name}
+            </button>
+          ))}
+          {paidSchools.length === 0 ? <span className="subscription-na">No paid schools</span> : null}
+        </div>
+      </div>
+      <div className="payment-status-filter">
+        {(["all", "upcoming", "outstanding", "partial", "paid"] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            className={filterStatus === s ? "active-payment-filter" : "payment-filter-btn"}
+            onClick={() => setFilterStatus(s)}
+          >
+            {s === "all" ? "All" : statusLabel(s)}
+            <span className="payment-filter-count">
+              {s === "all" ? allPayments.length : allPayments.filter((p) => p.payment.status === s).length}
+            </span>
+          </button>
+        ))}
+      </div>
+      {filtered.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No payments</h3>
+          <p>Generate invoices for paid schools using the buttons above.</p>
+        </div>
+      ) : (
+        <div className="payment-list">
+          {filtered.map(({ school, payment }) => {
+            const key = `${school.id}:${payment.id}`;
+            const isOpen = activePaymentKey === key;
+            const isSaving = saving[key];
+            const paidAmount = getPaidAmount(payment);
+            const balance = payment.totalAmount - paidAmount;
+            return (
+              <article key={key} className={`payment-row${isOpen ? " payment-row--open" : ""}`}>
+                <button className="payment-row-summary" type="button" onClick={() => setActivePaymentKey(isOpen ? null : key)} aria-expanded={isOpen}>
+                  <span className={`payment-status-dot payment-status-dot--${payment.status}`} />
+                  <span className="payment-school-name">{school.name}</span>
+                  <span className="payment-period">{formatBillingPeriod(payment.period)}</span>
+                  <span className="payment-amount">{formatKES(payment.totalAmount)}</span>
+                  <span className={`payment-status-badge payment-status-badge--${payment.status}`}>{statusLabel(payment.status)}</span>
+                  <span className="payment-due">Due {payment.dueDate}</span>
+                  <ChevronRight size={16} className={`support-ticket-chevron${isOpen ? " support-ticket-chevron--open" : ""}`} />
+                </button>
+                {isOpen ? (
+                  <div className="payment-detail">
+                    <div className="payment-detail-columns">
+                      <div className="payment-detail-left">
+                        <InvoiceView school={school} payment={payment} />
+                      </div>
+                      <div className="payment-detail-right">
+                        <div className="payment-actions-panel">
+                          <h4>Status</h4>
+                          <select
+                            value={payment.status}
+                            disabled={Boolean(isSaving)}
+                            onChange={(e) => void doSave(school.id, { ...payment, status: e.target.value as SchoolPayment["status"] })}
+                          >
+                            <option value="upcoming">Upcoming</option>
+                            <option value="outstanding">Outstanding</option>
+                            <option value="partial">Partial</option>
+                            <option value="paid">Paid</option>
+                          </select>
+                        </div>
+                        <div className="payment-actions-panel">
+                          <h4>Register payment</h4>
+                          {balance > 0 ? (
+                            <>
+                              <div className="subscription-price-input-wrap">
+                                <span className="subscription-currency">KES</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className="subscription-price-input"
+                                  placeholder={balance.toFixed(2)}
+                                  value={newRecordAmount[key] ?? ""}
+                                  onChange={(e) => setNewRecordAmount((prev) => ({ ...prev, [key]: e.target.value }))}
+                                />
+                              </div>
+                              <input
+                                className="inline-table-input"
+                                placeholder="Note (optional)"
+                                value={newRecordNote[key] ?? ""}
+                                onChange={(e) => setNewRecordNote((prev) => ({ ...prev, [key]: e.target.value }))}
+                              />
+                              <button
+                                className="primary-action"
+                                type="button"
+                                disabled={Boolean(isSaving) || !newRecordAmount[key]}
+                                onClick={() => {
+                                  const amount = parseFloat(newRecordAmount[key] ?? "0") || 0;
+                                  if (amount <= 0) return;
+                                  const record: PaymentRecord = { id: `record-${Date.now()}`, paidAt: new Date().toISOString().slice(0, 10), amount, note: newRecordNote[key]?.trim() || undefined };
+                                  const updated = { ...payment, records: [...payment.records, record] };
+                                  const newStatus = computePaymentStatus(updated);
+                                  setNewRecordAmount((prev) => { const next = { ...prev }; delete next[key]; return next; });
+                                  setNewRecordNote((prev) => { const next = { ...prev }; delete next[key]; return next; });
+                                  void doSave(school.id, { ...updated, status: newStatus });
+                                }}
+                              >
+                                Record payment
+                              </button>
+                            </>
+                          ) : <p className="payment-fully-paid">Fully paid</p>}
+                        </div>
+                        <div className="payment-actions-panel">
+                          <h4>Comments</h4>
+                          {(payment.comments ?? []).map((c) => (
+                            <div key={c.id} className="payment-comment">
+                              <span className="payment-comment-date">{c.createdAt.slice(0, 10)}</span>
+                              <p>{c.body}</p>
+                            </div>
+                          ))}
+                          <textarea
+                            className="payment-comment-input"
+                            placeholder="Add a comment…"
+                            rows={2}
+                            value={newComment[key] ?? ""}
+                            onChange={(e) => setNewComment((prev) => ({ ...prev, [key]: e.target.value }))}
+                          />
+                          <button
+                            className="secondary-action"
+                            type="button"
+                            disabled={Boolean(isSaving) || !newComment[key]?.trim()}
+                            onClick={() => {
+                              const body = newComment[key]?.trim();
+                              if (!body) return;
+                              const comment: PaymentComment = { id: `comment-${Date.now()}`, body, createdAt: new Date().toISOString() };
+                              setNewComment((prev) => { const next = { ...prev }; delete next[key]; return next; });
+                              void doSave(school.id, { ...payment, comments: [...(payment.comments ?? []), comment] });
+                            }}
+                          >
+                            Add comment
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </EditorPanel>
+  );
+}
+
+function SchoolBillingPanel({
+  school,
+  onUpdatePayment: _onUpdatePayment,
+}: {
+  school: School;
+  onUpdatePayment: (payment: SchoolPayment) => void;
+}) {
+  const sub = school.subscription;
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
+  const payments = (school.payments ?? [])
+    .map((p) => ({ ...p, status: computePaymentStatus(p) }))
+    .sort((a, b) => b.period.localeCompare(a.period));
+
+  const planLabel = !sub || sub.plan === "free" ? "Free" : sub.plan === "fixed" ? "Fixed price" : "Per student";
+  const interval = sub?.interval ?? "monthly";
+
+  const statusLabel = (s: SchoolPayment["status"]) => s === "upcoming" ? "Upcoming" : s === "outstanding" ? "Outstanding" : s === "partial" ? "Partial paid" : "Paid";
+
+  return (
+    <EditorPanel title="Billing">
+      <div className="nested-editor-grid">
+        <section className="sub-editor-panel">
+          <h3>Subscription</h3>
+          <div className="billing-subscription-summary">
+            <div className="billing-plan-row">
+              <span className="billing-plan-label">Plan</span>
+              <strong>{planLabel}</strong>
+            </div>
+            {sub && sub.plan !== "free" ? (
+              <>
+                <div className="billing-plan-row">
+                  <span className="billing-plan-label">Billing interval</span>
+                  <strong>{interval.charAt(0).toUpperCase() + interval.slice(1)}</strong>
+                </div>
+                {sub.plan === "fixed" && sub.fixedPrice !== undefined ? (
+                  <div className="billing-plan-row">
+                    <span className="billing-plan-label">Price</span>
+                    <strong>{formatKES(sub.fixedPrice)} / {interval === "yearly" ? "year" : "month"}</strong>
+                  </div>
+                ) : null}
+                {sub.plan === "per-student" && sub.pricePerStudent !== undefined ? (
+                  <>
+                    <div className="billing-plan-row">
+                      <span className="billing-plan-label">Rate</span>
+                      <strong>{formatKES(sub.pricePerStudent)} / student / {interval === "yearly" ? "year" : "month"}</strong>
+                    </div>
+                    <div className="billing-plan-row">
+                      <span className="billing-plan-label">Active students</span>
+                      <strong>{school.students.filter((s) => !s.accountDisabled).length}</strong>
+                    </div>
+                    <div className="billing-plan-row billing-plan-row-total">
+                      <span className="billing-plan-label">Estimated per period</span>
+                      <strong>{formatKES(school.students.filter((s) => !s.accountDisabled).length * sub.pricePerStudent!)}</strong>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <p className="editor-helper-text">Contact EduLink Africa to upgrade your subscription.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="sub-editor-panel">
+          <h3>Payments</h3>
+          {payments.length === 0 ? (
+            <div className="empty-editor-state">
+              <h3>No invoices yet</h3>
+              <p>Invoices will appear here when generated by EduLink Africa.</p>
+            </div>
+          ) : (
+            <div className="billing-payment-list">
+              {payments.map((payment) => {
+                const paidAmount = getPaidAmount(payment);
+                const isSelected = selectedPaymentId === payment.id;
+                return (
+                  <div key={payment.id} className={`billing-payment-row${isSelected ? " billing-payment-row--selected" : ""}`}>
+                    <button className="billing-payment-row-btn" type="button" onClick={() => setSelectedPaymentId(isSelected ? null : payment.id)}>
+                      <span className={`payment-status-dot payment-status-dot--${payment.status}`} />
+                      <span className="billing-payment-period">{formatBillingPeriod(payment.period)}</span>
+                      <span className="billing-payment-amount">{formatKES(payment.totalAmount)}</span>
+                      <span className={`payment-status-badge payment-status-badge--${payment.status}`}>{statusLabel(payment.status)}</span>
+                      <span className="billing-payment-due">Due {payment.dueDate}</span>
+                      <ChevronRight size={15} className={`support-ticket-chevron${isSelected ? " support-ticket-chevron--open" : ""}`} />
+                    </button>
+                    {isSelected ? (
+                      <div className="billing-invoice-expand">
+                        <InvoiceView school={school} payment={payment} />
+                        {payment.comments && payment.comments.length > 0 ? (
+                          <div className="billing-payment-comments">
+                            <h4>Comments</h4>
+                            {payment.comments.map((c) => (
+                              <div key={c.id} className="payment-comment">
+                                <span className="payment-comment-date">{c.createdAt.slice(0, 10)}</span>
+                                <p>{c.body}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {paidAmount > 0 && paidAmount < payment.totalAmount ? (
+                          <p className="billing-payment-balance"><strong>Balance due: {formatKES(payment.totalAmount - paidAmount)}</strong></p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </EditorPanel>
   );
@@ -2662,16 +3262,30 @@ function GlobalAboutEditor({
 }) {
   const categories = config.categories ?? [];
   const pages = config.pages ?? [];
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await onSubmit();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <EditorPanel title="Global about pages">
       <div className="panel-heading global-about-heading">
         <div>
-          <p>These categories and pages are shown on every school's About page.</p>
+          <p>Global categories appear as navigation links in the school header. Pages in a category are shown on that category's page. Categories named "about" appear on the About page.</p>
         </div>
-        <button className="primary-action" type="button" onClick={() => void onSubmit()}>
-          <Save size={18} />
-          Save global pages
+        <button className="primary-action" type="button" onClick={() => void handleSave()} disabled={saving}>
+          {saved ? <Check size={18} /> : <Save size={18} />}
+          {saving ? "Saving…" : saved ? "Saved!" : "Save global pages"}
         </button>
       </div>
       <div className="nested-editor-grid">
@@ -2730,6 +3344,7 @@ function GlobalAboutEditor({
                     options={[
                       { value: "richText", label: "Rich text page" },
                       { value: "staffDirectory", label: "Staff directory" },
+                      { value: "contact", label: "Contact info (shows school contact details)" },
                     ]}
                     onChange={(value) => update({ ...item, kind: value as GlobalAboutPage["kind"] })}
                   />
@@ -2745,7 +3360,7 @@ function GlobalAboutEditor({
                     options={categories.map((category) => ({ value: category.id, label: category.title }))}
                     onChange={(value) => update({ ...item, categoryId: value })}
                   />
-                  {item.kind === "staffDirectory" ? null : (
+                  {item.kind === "staffDirectory" || item.kind === "contact" ? null : (
                     <>
                       <ImageUpload label="Header image" value={item.headerImage ?? ""} onChange={(headerImage) => update({ ...item, headerImage })} />
                       <RichTextEditor label="Page content" value={item.body} onChange={(value) => update({ ...item, body: value })} />
@@ -3125,6 +3740,7 @@ function SchoolEditor({
     email: "",
     photoUrl: "",
     dateOfBirth: "",
+    enrolledAt: new Date().toISOString().slice(0, 10),
     gender: "",
     description: "",
     guardians: [],
@@ -3675,9 +4291,12 @@ function SchoolEditor({
             remarks={school.remarks ?? []}
             remarkSettings={school.remarkSettings}
             globalRemarkCategories={globalRemarkCategories}
+            schoolWorkSettings={schoolWorkSettings}
+            globalAssessmentScales={globalSchoolWork?.assessmentScales ?? []}
             onOpen={(subjectClassId) => setActiveWorkSubjectClassId(subjectClassId)}
             onRemarksChange={(nextRemarks) => setField("remarks", nextRemarks)}
             onStudentChange={(student) => setField("students", students.map((s) => s.id === student.id ? student : s))}
+            onSchoolWorkSettingsChange={updateSchoolWorkSettings}
           />
         ) : null}
         {activeSection === "profile" ? (
@@ -3746,6 +4365,19 @@ function SchoolEditor({
           </EditorPanel>
         ) : null}
 
+        {activeSection === "billing" ? (
+          <SchoolBillingPanel
+            school={school}
+            onUpdatePayment={(payment) => {
+              const existing = school.payments ?? [];
+              const nextPayments = existing.some((p) => p.id === payment.id)
+                ? existing.map((p) => (p.id === payment.id ? payment : p))
+                : [...existing, payment];
+              setField("payments", nextPayments);
+            }}
+          />
+        ) : null}
+
         {activeSection === "loginSettings" ? (
           <EditorPanel title="Settings">
             <div className="nested-editor-grid">
@@ -3810,87 +4442,125 @@ function SchoolEditor({
         ) : null}
 
         {activeSection === "about" ? (
-          <EditorPanel title="About">
-            {globalAbout ? (
-              <ReadOnlyGlobalAbout
-                config={globalAbout}
-                schoolPages={aboutPages}
-                onLocalPageChange={(page) => {
-                  const existingIndex = aboutPages.findIndex((item) => item.slug === page.slug);
-                  setField("aboutPages", existingIndex >= 0
-                    ? aboutPages.map((item, index) => index === existingIndex ? page : item)
-                    : [...aboutPages, page]);
-                }}
-              />
-            ) : null}
-            <div className="nested-editor-grid">
-              <section className="sub-editor-panel">
-                <h3>Categories</h3>
-                <Repeater
-                  items={aboutCategories}
-                  addLabel="Add category"
-                  createItem={(): AboutCategory => ({ id: `about-category-${Date.now()}`, title: "New category" })}
-                  onChange={(items) => {
-                    const validIds = new Set(items.map((item) => item.id));
-                    const validGlobalIds = new Set(globalCategories.map((item) => item.id));
-                    updateSchool({
-                      ...school,
-                      aboutCategories: items,
-                      aboutPages: aboutPages.map((page) => ({
-                        ...page,
-                        categoryId: validIds.has(page.categoryId) || validGlobalIds.has(page.categoryId)
-                          ? page.categoryId
-                          : items[0]?.id ?? globalCategories[0]?.id ?? "",
-                      })),
-                    });
-                  }}
-                  renderItem={(item, update) => (
-                    <TextInput label="Category title" value={item.title} onChange={(value) => update({ ...item, title: value })} />
-                  )}
-                />
-              </section>
-
-              <section className="sub-editor-panel">
-                <h3>Pages</h3>
-                {editableAboutCategoryOptions.length === 0 ? (
-                  <div className="empty-editor-state">
-                    <h3>Create a category first</h3>
-                    <p>About pages must belong to a category. Add a school category or ask a superadmin to create a global category.</p>
+          <EditorPanel title="Website pages">
+            <p className="website-pages-description">
+              All pages shown on your school website, organized by category. Global categories and pages are managed by the superadmin.
+              School categories appear as navigation links in the header.
+            </p>
+            {[
+              ...globalCategories.map((cat) => ({ ...cat, isGlobal: true as const })),
+              ...aboutCategories.map((cat) => ({ ...cat, isGlobal: false as const })),
+            ].map((category) => {
+              const catGlobalPages = category.isGlobal
+                ? (globalAbout?.pages ?? []).filter((p) => p.categoryId === category.id)
+                : [];
+              const catSchoolPages = editableAboutPages.filter((p) => p.categoryId === category.id);
+              return (
+                <section className="website-pages-category" key={category.id}>
+                  <div className="website-pages-category-header">
+                    {category.isGlobal ? (
+                      <>
+                        <h3>{category.title}</h3>
+                        <span className="website-pages-global-badge">Global</span>
+                      </>
+                    ) : (
+                      <>
+                        <TextInput
+                          label="Category name"
+                          value={category.title}
+                          onChange={(title) => setField("aboutCategories", aboutCategories.map((c) => c.id === category.id ? { ...c, title } : c))}
+                        />
+                        <button
+                          className="remove-button"
+                          type="button"
+                          onClick={() => {
+                            const remaining = aboutCategories.filter((c) => c.id !== category.id);
+                            const fallbackId = remaining[0]?.id ?? globalCategories[0]?.id ?? "";
+                            updateSchool({
+                              ...school,
+                              aboutCategories: remaining,
+                              aboutPages: aboutPages.map((page) => ({
+                                ...page,
+                                categoryId: page.categoryId === category.id ? fallbackId : page.categoryId,
+                              })),
+                            });
+                          }}
+                        >
+                          Remove category
+                        </button>
+                      </>
+                    )}
                   </div>
-                ) : (
+                  {catGlobalPages.map((page) => (
+                    <article className="website-pages-global-page" key={page.id}>
+                      <div className="website-pages-global-page-meta">
+                        <strong>{page.title}</strong>
+                        <small>/{page.slug}</small>
+                      </div>
+                      {page.kind === "contact" ? (
+                        <p className="website-pages-contact-note">Shows your school's contact information automatically.</p>
+                      ) : (
+                        <RichTextEditor
+                          label={page.kind === "staffDirectory" ? "Local description above staff directory" : "Additional school content (shown on this page)"}
+                          value={aboutPages.find((item) => item.slug === page.slug)?.body ?? ""}
+                          onChange={(body) => {
+                            const existing = aboutPages.find((item) => item.slug === page.slug);
+                            const updated: AboutPage = {
+                              id: existing?.id ?? `local-global-page-${page.slug}`,
+                              categoryId: page.categoryId,
+                              title: page.title,
+                              slug: page.slug,
+                              headerImage: existing?.headerImage ?? "",
+                              body,
+                            };
+                            const idx = aboutPages.findIndex((item) => item.slug === page.slug);
+                            setField("aboutPages", idx >= 0
+                              ? aboutPages.map((item, i) => i === idx ? updated : item)
+                              : [...aboutPages, updated]);
+                          }}
+                        />
+                      )}
+                    </article>
+                  ))}
                   <Repeater
-                    items={editableAboutPages}
+                    items={catSchoolPages}
                     addLabel="Add page"
                     createItem={(): AboutPage => ({
                       id: `about-page-${Date.now()}`,
-                      categoryId: defaultAboutCategoryId,
+                      categoryId: category.id,
                       title: "New page",
                       slug: "",
                       headerImage: "",
                       body: "",
                     })}
-                    onChange={(items) => setField("aboutPages", [
-                      ...aboutPages.filter((page) => globalPageSlugs.has(page.slug)),
-                      ...items,
-                    ])}
+                    onChange={(items) => {
+                      const globalLocalPages = aboutPages.filter((p) => globalPageSlugs.has(p.slug));
+                      const otherPages = editableAboutPages.filter((p) => p.categoryId !== category.id);
+                      setField("aboutPages", [...globalLocalPages, ...otherPages, ...items]);
+                    }}
                     renderItem={(item, update) => (
                       <>
-                        <TextInput label="Page title" value={item.title} onChange={(value) => update({ ...item, title: value, slug: item.slug || value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") })} />
-                        <TextInput label="URL slug" value={item.slug} onChange={(value) => update({ ...item, slug: value })} />
-                        <SelectInput
-                          label="Category"
-                          value={item.categoryId}
-                          options={editableAboutCategoryOptions}
-                          onChange={(value) => update({ ...item, categoryId: value })}
+                        <TextInput
+                          label="Page title"
+                          value={item.title}
+                          onChange={(value) => update({ ...item, title: value, slug: item.slug || value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") })}
                         />
+                        <TextInput label="URL slug" value={item.slug} onChange={(value) => update({ ...item, slug: value })} />
                         <ImageUpload label="Header image" value={item.headerImage ?? ""} onChange={(headerImage) => update({ ...item, headerImage })} />
                         <RichTextEditor label="Page content" value={item.body} onChange={(value) => update({ ...item, body: value })} />
                       </>
                     )}
                   />
-                )}
-              </section>
-            </div>
+                </section>
+              );
+            })}
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={() => setField("aboutCategories", [...aboutCategories, { id: `about-category-${Date.now()}`, title: "New category" }])}
+            >
+              Add category
+            </button>
           </EditorPanel>
         ) : null}
 
@@ -4290,91 +4960,6 @@ function SchoolEditor({
           </EditorPanel>
         ) : null}
 
-        {activeSection === "schoolWorkSettings" ? (
-          <EditorPanel title="School work settings">
-            <div className="nested-editor-grid">
-              <section className="sub-editor-panel">
-                <h3>Assessment scales</h3>
-                <div className="assessment-scale-toggle-list">
-                  {(globalSchoolWork?.assessmentScales ?? []).map((scale) => (
-                    <label className="assessment-scale-toggle" key={scale.id}>
-                      <div>
-                        <strong>{scale.name}</strong>
-                        <small>{formatAssessmentScaleSummary(scale)}</small>
-                      </div>
-                      <CheckboxInput
-                        label="Enabled"
-                        checked={schoolWorkSettings.enabledGlobalAssessmentScaleIds.includes(scale.id)}
-                        onChange={(checked) => updateSchoolWorkSettings({
-                          ...schoolWorkSettings,
-                          knownGlobalAssessmentScaleIds: globalSchoolWork?.assessmentScales.map((item) => item.id) ?? schoolWorkSettings.knownGlobalAssessmentScaleIds,
-                          enabledGlobalAssessmentScaleIds: checked
-                            ? mergeUnique([...schoolWorkSettings.enabledGlobalAssessmentScaleIds, scale.id])
-                            : schoolWorkSettings.enabledGlobalAssessmentScaleIds.filter((id) => id !== scale.id),
-                        })}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </section>
-
-              <section className="sub-editor-panel">
-                <h3>Teacher permissions</h3>
-                <label className="login-format-option">
-                  <div>
-                    <strong>Allow teachers to create custom assessment scales</strong>
-                    <small>When disabled, only admins can create assessment scales. Teachers can still use enabled global and school-level scales.</small>
-                  </div>
-                  <CheckboxInput
-                    label="Allowed"
-                    checked={!schoolWorkSettings.disableTeacherCustomScales}
-                    onChange={(checked) => updateSchoolWorkSettings({ ...schoolWorkSettings, disableTeacherCustomScales: !checked })}
-                  />
-                </label>
-              </section>
-
-              <section className="sub-editor-panel">
-                <h3>Custom assessment scales</h3>
-                <div className="scale-editor-list">
-                  <button
-                    className="secondary-action repeater-add-button"
-                    type="button"
-                    onClick={() => updateSchoolWorkSettings({
-                      ...schoolWorkSettings,
-                      customAssessmentScales: [...schoolWorkSettings.customAssessmentScales, createSchoolAssessmentScale()],
-                    })}
-                  >
-                    Add school assessment scale
-                  </button>
-                  {schoolWorkSettings.customAssessmentScales.length === 0 ? (
-                    <div className="empty-editor-state">
-                      <h3>No school-specific scales yet</h3>
-                      <p>Create a custom scale here if this school should use something besides the enabled global scales.</p>
-                    </div>
-                  ) : schoolWorkSettings.customAssessmentScales.map((scale, scaleIndex) => (
-                    <section className="sub-editor-panel assessment-scale-panel" key={scale.id}>
-                      {renderAssessmentScaleFields(scale, (nextScale) => updateSchoolWorkSettings({
-                        ...schoolWorkSettings,
-                        customAssessmentScales: schoolWorkSettings.customAssessmentScales.map((item, index) => index === scaleIndex ? nextScale : item),
-                      }))}
-                      <button
-                        className="remove-button"
-                        type="button"
-                        onClick={() => updateSchoolWorkSettings({
-                          ...schoolWorkSettings,
-                          customAssessmentScales: schoolWorkSettings.customAssessmentScales.filter((_, index) => index !== scaleIndex),
-                        })}
-                      >
-                        Remove scale
-                      </button>
-                    </section>
-                  ))}
-                </div>
-              </section>
-
-            </div>
-          </EditorPanel>
-        ) : null}
 
         {isSchoolWorkPage && activeWorkSubjectClassId ? (
           <div className="school-work-detail-shell">
@@ -4555,9 +5140,9 @@ function getEditorSectionIcon(section: EditorSection): IconDefinition {
     subjectClasses: faBookOpen,
     subjects: faBook,
     students: faUserGraduate,
-    schoolWorkSettings: faSliders,
     schoolWork: faFolderOpen,
     loginSettings: faGaugeHigh,
+    billing: faScaleBalanced,
   };
   return icons[section];
 }
@@ -4608,10 +5193,10 @@ function getEditorSectionDescription(section: EditorSection) {
     classes: "Main class groups and class teachers.",
     subjectClasses: "Subject class groups with teachers and students.",
     subjects: "Subject catalog, abbreviations, and display colors.",
-    schoolWorkSettings: "Enable global assessment scales and create school-specific ones.",
     schoolWork: "Course materials and assignments for subject classes.",
     loginSettings: "Choose username/password and email link sign-in options.",
     students: "Student records, guardians, and class assignments.",
+    billing: "Subscription plan, invoices, and payment history.",
   };
   return descriptions[section];
 }
@@ -5481,6 +6066,57 @@ function SubjectColorPicker({ value, onChange }: { value: string; onChange: (val
   );
 }
 
+function renderAssessmentScaleFields(scale: AssessmentScale, update: (scale: AssessmentScale) => void) {
+  return (
+    <>
+      <div className="scale-heading">
+        <TextInput label="Scale name" value={scale.name} onChange={(name) => update({ ...scale, name })} />
+        <TextInput label="Scale id" value={scale.id} onChange={(id) => update({ ...scale, id: slugifySchoolName(id) })} />
+      </div>
+      <div className="assessment-level-list">
+        {scale.levels.map((level, levelIndex) => {
+          const isRequiredLevel = level.id === "excused" || level.id === "assessed";
+          return (
+            <div className="assessment-level-row" key={level.id}>
+              <TextInput
+                label="Value"
+                value={level.value}
+                onChange={(value) => update({ ...scale, levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, value } : item) })}
+              />
+              <TextInput
+                label="Minimum %"
+                value={String(level.minPercentage ?? 0)}
+                onChange={(minPercentage) => update({ ...scale, levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, minPercentage: parsePercentageInput(minPercentage) } : item) })}
+              />
+              <TextInput
+                label="Description"
+                value={level.description ?? ""}
+                onChange={(description) => update({ ...scale, levels: scale.levels.map((item, index) => index === levelIndex ? { ...item, description } : item) })}
+              />
+              {isRequiredLevel ? <span className="required-scale-level-label">Required</span> : (
+                <button
+                  className="remove-button"
+                  type="button"
+                  onClick={() => update({ ...scale, levels: scale.levels.filter((_, index) => index !== levelIndex) })}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button
+        className="secondary-action"
+        type="button"
+        onClick={() => update({ ...scale, levels: [...scale.levels.slice(0, -2), { id: `level-${Date.now()}`, value: "", minPercentage: 0, description: "" }, ...scale.levels.slice(-2)] })}
+      >
+        Add level
+      </button>
+    </>
+  );
+}
+
 function SchoolWorkOverview({
   subjectClasses,
   subjects,
@@ -5491,9 +6127,12 @@ function SchoolWorkOverview({
   remarks = [],
   remarkSettings,
   globalRemarkCategories = [],
+  schoolWorkSettings,
+  globalAssessmentScales = [],
   onOpen,
   onRemarksChange,
   onStudentChange,
+  onSchoolWorkSettingsChange,
 }: {
   subjectClasses: SubjectClass[];
   subjects: Subject[];
@@ -5504,12 +6143,20 @@ function SchoolWorkOverview({
   remarks?: Remark[];
   remarkSettings?: SchoolRemarkSettings;
   globalRemarkCategories?: RemarkCategory[];
+  schoolWorkSettings?: SchoolWorkSettings;
+  globalAssessmentScales?: AssessmentScale[];
   onOpen: (subjectClassId: string) => void;
   onRemarksChange?: (remarks: Remark[]) => void;
   onStudentChange?: (student: Student) => void;
+  onSchoolWorkSettingsChange?: (settings: SchoolWorkSettings) => void;
 }) {
-  const [activeOverviewMenu, setActiveOverviewMenu] = useState<"subjects" | "contactTeacher">("subjects");
-  const [contactTeacherClassId, setContactTeacherClassId] = useState<string | null>(null);
+  const [activeOverviewMenu, setActiveOverviewMenu] = useState<"subjects" | "contactTeacher" | "admin">("subjects");
+  const [contactTeacherClassId, setContactTeacherClassId] = useState<string | null>(() => localStorage.getItem("edulink-contact-class"));
+
+  const selectContactClass = (id: string | null) => {
+    setContactTeacherClassId(id);
+    if (id) localStorage.setItem("edulink-contact-class", id);
+  };
   const [contactInfoMode, setContactInfoMode] = useState<"contact" | "remarks" | "gpa">("contact");
   const [contactStudentId, setContactStudentId] = useState<string | null>(null);
   const [editingGuardianId, setEditingGuardianId] = useState<string | null>(null);
@@ -5535,12 +6182,141 @@ function SchoolWorkOverview({
       <button
         className={activeOverviewMenu === "contactTeacher" ? "active-school-work-overview-menu-item" : ""}
         type="button"
-        onClick={() => { setActiveOverviewMenu("contactTeacher"); setContactTeacherClassId(null); }}
+        onClick={() => setActiveOverviewMenu("contactTeacher")}
       >
         Contact teacher
       </button>
+      {role === "admin" ? (
+        <button
+          className={activeOverviewMenu === "admin" ? "active-school-work-overview-menu-item" : ""}
+          type="button"
+          onClick={() => { setActiveOverviewMenu("admin"); setContactTeacherClassId(null); }}
+        >
+          Admin
+        </button>
+      ) : null}
     </nav>
   ) : null;
+
+  if (activeOverviewMenu === "admin" && role === "admin") {
+    const effectiveSettings: SchoolWorkSettings = schoolWorkSettings ?? {
+      enabledGlobalAssessmentScaleIds: globalAssessmentScales.map((s) => s.id),
+      knownGlobalAssessmentScaleIds: globalAssessmentScales.map((s) => s.id),
+      customAssessmentScales: [],
+    };
+    const activeGlobalScales = globalAssessmentScales.filter((s) => effectiveSettings.enabledGlobalAssessmentScaleIds.includes(s.id));
+    const allActiveScales = [...activeGlobalScales, ...effectiveSettings.customAssessmentScales];
+    return (
+      <div className="school-work-overview">
+        {overviewMenu}
+        {allActiveScales.length > 0 ? (
+          <div className="admin-scale-card-grid">
+            {allActiveScales.map((scale) => (
+              <div key={scale.id} className="admin-scale-card">
+                <div className="admin-scale-card-header">
+                  <strong>{scale.name}</strong>
+                  {effectiveSettings.customAssessmentScales.some((s) => s.id === scale.id) ? (
+                    <span className="admin-scale-card-tag">Custom</span>
+                  ) : (
+                    <span className="admin-scale-card-tag admin-scale-card-tag--global">Global</span>
+                  )}
+                </div>
+                <div className="admin-scale-levels">
+                  {scale.levels.map((level) => (
+                    <div key={level.id} className="admin-scale-level-row">
+                      <span className="admin-scale-level-value">{level.value}</span>
+                      <span className="admin-scale-level-pct">≥ {level.minPercentage}%</span>
+                      {level.description ? <span className="admin-scale-level-desc">{level.description}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="nested-editor-grid">
+          <section className="sub-editor-panel">
+            <h3>Assessment scales</h3>
+            <div className="assessment-scale-toggle-list">
+              {globalAssessmentScales.map((scale) => (
+                <label className="assessment-scale-toggle" key={scale.id}>
+                  <div>
+                    <strong>{scale.name}</strong>
+                    <small>{formatAssessmentScaleSummary(scale)}</small>
+                  </div>
+                  <CheckboxInput
+                    label="Enabled"
+                    checked={effectiveSettings.enabledGlobalAssessmentScaleIds.includes(scale.id)}
+                    onChange={(checked) => onSchoolWorkSettingsChange?.({
+                      ...effectiveSettings,
+                      knownGlobalAssessmentScaleIds: globalAssessmentScales.map((item) => item.id),
+                      enabledGlobalAssessmentScaleIds: checked
+                        ? mergeUnique([...effectiveSettings.enabledGlobalAssessmentScaleIds, scale.id])
+                        : effectiveSettings.enabledGlobalAssessmentScaleIds.filter((id) => id !== scale.id),
+                    })}
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="sub-editor-panel">
+            <h3>Teacher permissions</h3>
+            <label className="login-format-option">
+              <div>
+                <strong>Allow teachers to create custom assessment scales</strong>
+                <small>When disabled, only admins can create assessment scales. Teachers can still use enabled global and school-level scales.</small>
+              </div>
+              <CheckboxInput
+                label="Allowed"
+                checked={!effectiveSettings.disableTeacherCustomScales}
+                onChange={(checked) => onSchoolWorkSettingsChange?.({ ...effectiveSettings, disableTeacherCustomScales: !checked })}
+              />
+            </label>
+          </section>
+
+          <section className="sub-editor-panel">
+            <h3>Custom assessment scales</h3>
+            <div className="scale-editor-list">
+              <button
+                className="secondary-action repeater-add-button"
+                type="button"
+                onClick={() => onSchoolWorkSettingsChange?.({
+                  ...effectiveSettings,
+                  customAssessmentScales: [...effectiveSettings.customAssessmentScales, createCustomAssessmentScale()],
+                })}
+              >
+                Add school assessment scale
+              </button>
+              {effectiveSettings.customAssessmentScales.length === 0 ? (
+                <div className="empty-editor-state">
+                  <h3>No school-specific scales yet</h3>
+                  <p>Create a custom scale here if this school should use something besides the enabled global scales.</p>
+                </div>
+              ) : effectiveSettings.customAssessmentScales.map((scale, scaleIndex) => (
+                <section className="sub-editor-panel assessment-scale-panel" key={scale.id}>
+                  {renderAssessmentScaleFields(scale, (nextScale) => onSchoolWorkSettingsChange?.({
+                    ...effectiveSettings,
+                    customAssessmentScales: effectiveSettings.customAssessmentScales.map((item, index) => index === scaleIndex ? nextScale : item),
+                  }))}
+                  <button
+                    className="remove-button"
+                    type="button"
+                    onClick={() => onSchoolWorkSettingsChange?.({
+                      ...effectiveSettings,
+                      customAssessmentScales: effectiveSettings.customAssessmentScales.filter((_, index) => index !== scaleIndex),
+                    })}
+                  >
+                    Remove scale
+                  </button>
+                </section>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   if (activeOverviewMenu === "contactTeacher" && canViewContactTeacherClasses) {
     const effectiveContactClassId = contactTeacherClassId ?? (contactTeacherClasses.length === 1 ? contactTeacherClasses[0].id : null);
@@ -5553,7 +6329,7 @@ function SchoolWorkOverview({
             key={classGroup.id}
             type="button"
             className={classGroup.id === effectiveContactClassId ? "contact-teacher-class-tab active-contact-teacher-tab" : "contact-teacher-class-tab"}
-            onClick={() => { setContactTeacherClassId(classGroup.id); setContactStudentId(null); }}
+            onClick={() => { selectContactClass(classGroup.id); setContactStudentId(null); }}
           >
             {formatClassName(classGroup.name)}
           </button>
@@ -5822,7 +6598,7 @@ function SchoolWorkOverview({
               key={classGroup.id}
               type="button"
               className={classGroup.id === contactTeacherClassId ? "contact-teacher-class-tab active-contact-teacher-tab" : "contact-teacher-class-tab"}
-              onClick={() => { setContactTeacherClassId(classGroup.id); setContactStudentId(null); }}
+              onClick={() => { selectContactClass(classGroup.id); setContactStudentId(null); }}
             >
               {formatClassName(classGroup.name)}
             </button>
@@ -6021,10 +6797,12 @@ function getAssessmentStudentStatus(assessment: Assessment, grade?: AssessmentGr
 function AssessmentFields({
   assessment,
   scales,
+  topics = [],
   onChange,
 }: {
   assessment: Assessment;
   scales: AssessmentScale[];
+  topics?: Topic[];
   onChange: (assessment: Assessment) => void;
 }) {
   return (
@@ -6053,6 +6831,36 @@ function AssessmentFields({
         value={assessment.scaleId}
         options={scales.map((scale) => ({ value: scale.id, label: scale.name }))}
         onChange={(scaleId) => onChange({ ...assessment, scaleId })}
+      />
+      {topics.length > 0 ? (
+        <div className="field-label">
+          Topics
+          <div className="assessment-topic-checklist">
+            {topics.map((topic) => {
+              const checked = (assessment.topicIds ?? []).includes(topic.id);
+              return (
+                <label key={topic.id} className="assessment-topic-check-row">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      const next = checked
+                        ? (assessment.topicIds ?? []).filter((id) => id !== topic.id)
+                        : [...(assessment.topicIds ?? []), topic.id];
+                      onChange({ ...assessment, topicIds: next });
+                    }}
+                  />
+                  {topic.name}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      <CheckboxInput
+        label="Hidden from students"
+        checked={assessment.hidden ?? false}
+        onChange={(hidden) => onChange({ ...assessment, hidden })}
       />
       <TextArea label="Description" value={assessment.description ?? ""} onChange={(description) => onChange({ ...assessment, description })} />
     </>
@@ -6291,7 +7099,7 @@ function AssessmentResourceDetail({
       <TextArea label="Write a comment (optional)" value={draftText} onChange={setDraftText} />
       <label className="field-label">
         Attach files (optional — PDF, Word, Excel)
-        <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => void addSubmissionFiles(event.target.files)} />
+        <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(event) => void addSubmissionFiles(event.target.files)} />
       </label>
       {pendingFiles.length > 0 ? (
         <ul className="pending-file-list">
@@ -7303,7 +8111,223 @@ function RemarksView({
   );
 }
 
-function SchoolWorkStatusCards({ onOpenGrades, onOpenRemarks }: { onOpenGrades: () => void; onOpenRemarks: () => void }) {
+function TopicPerformanceView({
+  topics,
+  assessments,
+  scales,
+  students,
+}: {
+  topics: Topic[];
+  assessments: Assessment[];
+  scales: AssessmentScale[];
+  students: Student[];
+}) {
+  const getTopicAvg = (studentId: string, topicId: string) => {
+    const topicAssessments = assessments.filter((a) => (a.topicIds ?? []).includes(topicId));
+    const scores: number[] = [];
+    for (const a of topicAssessments) {
+      const grade = a.grades.find((g) => g.studentId === studentId);
+      if (grade?.score !== undefined && grade.score !== "") {
+        const pct = parseFloat(grade.score);
+        if (!isNaN(pct)) scores.push(pct);
+      }
+    }
+    return scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+  };
+
+  const getColor = (avg: number | null) => {
+    if (avg === null) return "";
+    if (avg >= 75) return "topic-cell-high";
+    if (avg >= 50) return "topic-cell-mid";
+    return "topic-cell-low";
+  };
+
+  if (topics.length === 0) {
+    return (
+      <div className="empty-editor-state">
+        <h3>No topics defined</h3>
+        <p>Add topics in the Topics tab, then link assessments to topics.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="topic-performance-wrap">
+      <div className="data-table-wrap">
+        <table className="data-table topic-performance-table">
+          <thead>
+            <tr>
+              <th>Student</th>
+              {topics.map((t) => (
+                <th key={t.id} className="topic-performance-topic-header">{t.name}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {students.map((student) => (
+              <tr key={student.id}>
+                <td><strong>{student.firstName} {student.lastName}</strong></td>
+                {topics.map((topic) => {
+                  const avg = getTopicAvg(student.id, topic.id);
+                  return (
+                    <td key={topic.id} className={`topic-performance-cell ${getColor(avg)}`}>
+                      {avg !== null ? `${avg.toFixed(0)}%` : "—"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="topic-performance-legend">
+        <span className="topic-legend-item topic-cell-high">≥75%</span>
+        <span className="topic-legend-item topic-cell-mid">50–74%</span>
+        <span className="topic-legend-item topic-cell-low">&lt;50%</span>
+        <span className="topic-legend-item">— No data</span>
+      </div>
+    </div>
+  );
+}
+
+function TopicSettings({
+  topics,
+  folders,
+  resources,
+  onChange,
+  onCreateFolder,
+}: {
+  topics: Topic[];
+  folders: ResourceFolder[];
+  resources: SubjectResource[];
+  onChange: (topics: Topic[]) => void;
+  onCreateFolder: (name: string) => string;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Pick<Topic, "name" | "description" | "startDate" | "endDate" | "folderId">>({ name: "", description: "", startDate: "", endDate: "", folderId: "" });
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+
+  const emptyDraft = { name: "", description: "", startDate: "", endDate: "", folderId: "" };
+  const startEdit = (topic: Topic) => { setEditingId(topic.id); setDraft({ name: topic.name, description: topic.description ?? "", startDate: topic.startDate ?? "", endDate: topic.endDate ?? "", folderId: topic.folderId ?? "" }); };
+  const startNew = () => { setEditingId("new"); setDraft(emptyDraft); };
+  const cancel = () => { setEditingId(null); setDraft(emptyDraft); setCreatingFolder(false); setNewFolderName(""); };
+
+  const save = () => {
+    if (!draft.name.trim()) return;
+    let folderId: string | undefined = draft.folderId || undefined;
+    if (creatingFolder && newFolderName.trim()) {
+      folderId = onCreateFolder(newFolderName.trim());
+    }
+    const saved: Topic = {
+      id: editingId === "new" ? `topic-${Date.now()}` : editingId!,
+      name: draft.name.trim(),
+      description: draft.description?.trim() || undefined,
+      startDate: draft.startDate || undefined,
+      endDate: draft.endDate || undefined,
+      folderId,
+    };
+    if (editingId === "new") {
+      onChange([...topics, saved]);
+    } else {
+      onChange(topics.map((t) => t.id === editingId ? saved : t));
+    }
+    cancel();
+  };
+
+  const getTopicResources = (folderId?: string) => folderId ? resources.filter((r) => r.folderId === folderId) : [];
+  const getFolderName = (folderId?: string) => folderId ? (folders.find((f) => f.id === folderId)?.name ?? null) : null;
+  const formatDateRange = (startDate?: string, endDate?: string) => {
+    if (!startDate && !endDate) return null;
+    const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    if (startDate && endDate) return `${fmt(startDate)} – ${fmt(endDate)}`;
+    if (startDate) return `From ${fmt(startDate)}`;
+    return `Until ${fmt(endDate!)}`;
+  };
+
+  const modalOpen = editingId !== null;
+
+  const modal = modalOpen ? (
+    <div className="modal-backdrop" role="presentation" onClick={cancel}>
+      <section className="staff-modal" role="dialog" aria-modal="true" aria-labelledby="topic-modal-title" onClick={(e) => e.stopPropagation()}>
+        <div className="staff-modal-header">
+          <div>
+            <p className="eyebrow">Topic</p>
+            <h2 id="topic-modal-title">{editingId === "new" ? "Add topic" : "Edit topic"}</h2>
+          </div>
+          <button className="icon-action" type="button" onClick={cancel} aria-label="Close">✕</button>
+        </div>
+        <div className="staff-modal-body">
+          <TextInput label="Topic name" value={draft.name} onChange={(name) => setDraft((d) => ({ ...d, name }))} />
+          <TextInput label="Description (optional)" value={draft.description ?? ""} onChange={(description) => setDraft((d) => ({ ...d, description }))} />
+          <div className="topic-date-row">
+            <DateInput label="Start date" value={draft.startDate ?? ""} onChange={(startDate) => setDraft((d) => ({ ...d, startDate }))} />
+            <DateInput label="End date" value={draft.endDate ?? ""} onChange={(endDate) => setDraft((d) => ({ ...d, endDate }))} />
+          </div>
+          {creatingFolder ? (
+            <div className="topic-folder-row">
+              <TextInput label="New folder name" value={newFolderName} onChange={setNewFolderName} />
+              <button type="button" className="secondary-action topic-folder-alt-btn" onClick={() => { setCreatingFolder(false); setNewFolderName(""); }}>Use existing</button>
+            </div>
+          ) : (
+            <div className="topic-folder-row">
+              <label className="field-label topic-folder-select-label">
+                Linked folder (optional)
+                <select value={draft.folderId ?? ""} onChange={(e) => setDraft((d) => ({ ...d, folderId: e.target.value }))}>
+                  <option value="">— No folder —</option>
+                  {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              </label>
+              <button type="button" className="secondary-action topic-folder-alt-btn" onClick={() => setCreatingFolder(true)}>Create new folder</button>
+            </div>
+          )}
+          <p className="topic-folder-hint">Linking a folder groups resources under this topic. Assessments and tests inside the folder inherit this topic automatically — unless they are manually linked to a different one. Topics can be used to track student progress per topic.</p>
+        </div>
+        <div className="staff-modal-actions">
+          <button className="remove-button" type="button" onClick={cancel}>Cancel</button>
+          <button className="primary-action" type="button" onClick={save}>Save topic</button>
+        </div>
+      </section>
+    </div>
+  ) : null;
+
+  return (
+    <>
+      {modal}
+      <div className="topic-settings">
+        {topics.map((topic) => {
+          const topicResources = getTopicResources(topic.folderId);
+          const folderName = getFolderName(topic.folderId);
+          const dateRange = formatDateRange(topic.startDate, topic.endDate);
+          return (
+            <div key={topic.id} className="topic-settings-row">
+              <div className="topic-settings-info">
+                <strong>{topic.name}</strong>
+                {topic.description ? <span>{topic.description}</span> : null}
+                {dateRange ? <span className="topic-date-range"><CalendarDays size={13} /> {dateRange}</span> : null}
+                {folderName ? <span className="topic-folder-badge"><Folder size={13} /> {folderName}</span> : null}
+                {topicResources.length > 0 ? (
+                  <ul className="topic-resource-list">
+                    {topicResources.map((r) => <li key={r.id}>{r.title}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+              <div className="topic-settings-actions">
+                <button className="secondary-action" type="button" onClick={() => startEdit(topic)}>Edit</button>
+                <button className="remove-button" type="button" onClick={() => onChange(topics.filter((t) => t.id !== topic.id))}>Remove</button>
+              </div>
+            </div>
+          );
+        })}
+        <button className="topic-settings-add-btn" type="button" onClick={startNew}>
+          <Plus size={15} /> Add topic
+        </button>
+      </div>
+    </>
+  );
+}
+
+function SchoolWorkStatusCards({ onOpenGrades, onOpenRemarks, onOpenTopics, hasTopics }: { onOpenGrades: () => void; onOpenRemarks: () => void; onOpenTopics: () => void; hasTopics: boolean }) {
   return (
     <section className="school-work-section-menu">
       <div>
@@ -7319,6 +8343,12 @@ function SchoolWorkStatusCards({ onOpenGrades, onOpenRemarks }: { onOpenGrades: 
           <AdminCardTitle icon={faMessage} title="Remarks" />
           <span>View and register remarks on students in this class.</span>
         </button>
+        {hasTopics ? (
+          <button className="editor-section-card" type="button" onClick={onOpenTopics}>
+            <AdminCardTitle icon={faBookOpen} title="Topic performance" />
+            <span>See how students are performing across different topics.</span>
+          </button>
+        ) : null}
       </div>
     </section>
   );
@@ -7625,9 +8655,9 @@ function SubjectClassWorkPage({
   onRemarkSettingsChange?: (settings: SchoolRemarkSettings) => void;
   onRemarksChange?: (remarks: Remark[]) => void;
 }) {
-  const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "students" | "settings">("resources");
+  const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "topics" | "students" | "settings">("resources");
   const [activeSettingsSection, setActiveSettingsSection] = useState<"assessmentScales" | "remarkCategories" | null>(null);
-  const [activeStatusSection, setActiveStatusSection] = useState<"grades" | "remarks" | null>(null);
+  const [activeStatusSection, setActiveStatusSection] = useState<"grades" | "remarks" | "topics" | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState("root");
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
@@ -7636,6 +8666,8 @@ function SubjectClassWorkPage({
   const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
   const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
   const [showFolderResourcePicker, setShowFolderResourcePicker] = useState(false);
+  const [newResourceType, setNewResourceType] = useState<SubjectResource["type"] | "assessment" | "folder" | null>(null);
+  const [newResourceDraft, setNewResourceDraft] = useState<{ title: string; url: string; date: string; format: string; scaleId: string; topicIds: string[]; imageDataUrl: string }>({ title: "", url: "https://", date: new Date().toISOString().slice(0, 10), format: assessmentFormatOptions[0]?.value ?? "", scaleId: "", topicIds: [], imageDataUrl: "" });
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set(["root"]));
   const [dragTargetFolderId, setDragTargetFolderId] = useState<string | null>(null);
   const [draftAnnouncement, setDraftAnnouncement] = useState<Pick<SubjectClassAnnouncement, "title" | "body">>({ title: "", body: "" });
@@ -7710,10 +8742,11 @@ function SubjectClassWorkPage({
     customAssessmentScales: [],
   };
   const announcements = subjectClass.announcements ?? [];
-  const assessments = subjectClass.assessments ?? [];
+  const allAssessments = subjectClass.assessments ?? [];
   const subjectClassStudents = students.filter((student) => subjectClass.studentIds.includes(student.id));
   const isSimulatingStudent = Boolean(simulatedStudentId) && (accessLevel === "teacher" || accessLevel === "admin");
   const effectiveAccessLevel: SchoolWorkAccessLevel = isSimulatingStudent ? "student" : accessLevel;
+  const assessments = effectiveAccessLevel === "student" ? allAssessments.filter((a) => !a.hidden) : allAssessments;
   const effectiveStudentId = isSimulatingStudent ? simulatedStudentId! : activeStudentId;
   const simulatedStudent = isSimulatingStudent ? subjectClassStudents.find((s) => s.id === simulatedStudentId) : null;
   const canCreateSchoolWork = effectiveAccessLevel === "admin" || effectiveAccessLevel === "teacher";
@@ -7859,6 +8892,7 @@ function SubjectClassWorkPage({
     setEditingResourceId(null);
     setEditingAssessmentId(null);
     setShowFolderResourcePicker(false);
+    setNewResourceType(null);
     setExpandedFolderIds((current) => new Set(current).add(folderId));
   };
   const selectOrCollapseTreeFolder = (folderId: string) => {
@@ -7882,6 +8916,7 @@ function SubjectClassWorkPage({
     setEditingResourceId(null);
     setEditingAssessmentId(null);
     setShowFolderResourcePicker(false);
+    setNewResourceType(null);
   };
   const selectAssessment = (assessment: Assessment) => {
     if (!confirmNavigation()) return;
@@ -7892,6 +8927,7 @@ function SubjectClassWorkPage({
     setEditingResourceId(null);
     setEditingAssessmentId(null);
     setShowFolderResourcePicker(false);
+    setNewResourceType(null);
   };
   const toggleTreeFolder = (folderId: string) => {
     setExpandedFolderIds((current) => {
@@ -7921,9 +8957,39 @@ function SubjectClassWorkPage({
     setSelectedFolderId(folder.id);
     setShowFolderResourcePicker(false);
   };
-  const addResource = (type: SubjectResource["type"]) => {
-    if (type === "test") {
-      const resource = createTestResource(activeFolderId);
+  const openNewResourceDraft = (type: SubjectResource["type"] | "assessment" | "folder") => {
+    if (!confirmNavigation()) return;
+    setNewResourceDraft({ title: "", url: "https://", date: new Date().toISOString().slice(0, 10), format: assessmentFormatOptions[0]?.value ?? "", scaleId: assessmentScales[0]?.id ?? "", topicIds: [], imageDataUrl: "" });
+    setNewResourceType(type);
+    setSelectedResourceId(null);
+    setSelectedAssessmentId(null);
+    setEditingResourceId(null);
+    setEditingAssessmentId(null);
+    setShowFolderResourcePicker(false);
+  };
+  const cancelNewResource = () => setNewResourceType(null);
+  const confirmNewResource = () => {
+    const title = newResourceDraft.title.trim();
+    if (newResourceType === "folder") {
+      const folder: ResourceFolder = { id: `folder-${Date.now()}`, name: title || "New folder", ...(activeFolderId ? { parentId: activeFolderId } : {}) };
+      updateFolders([...folders, folder]);
+      setSelectedFolderId(folder.id);
+      setNewResourceType(null);
+      setShowFolderResourcePicker(false);
+      return;
+    }
+    if (newResourceType === "assessment") {
+      const base = createAssessment(assessmentScales, activeFolderId);
+      const assessment = ensureAssessmentGrades({ ...base, title: title || base.title, date: newResourceDraft.date, format: newResourceDraft.format, scaleId: newResourceDraft.scaleId || base.scaleId, topicIds: newResourceDraft.topicIds.length > 0 ? newResourceDraft.topicIds : undefined }, subjectClassStudents);
+      updateAssessments([...assessments, assessment]);
+      setSelectedAssessmentId(assessment.id);
+      setSelectedResourceId(null);
+      setEditingAssessmentId(assessment.id);
+      setNewResourceType(null);
+      return;
+    }
+    if (newResourceType === "test") {
+      const resource = { ...createTestResource(activeFolderId), title: title || "New test" };
       const nextResources = [...committedResources, resource];
       updateResources(nextResources);
       setDraftResources(nextResources);
@@ -7931,23 +8997,26 @@ function SubjectClassWorkPage({
       setSelectedAssessmentId(null);
       setEditingResourceId(resource.id);
       setHasUnsavedResourceChanges(false);
-      setShowFolderResourcePicker(false);
+      setNewResourceType(null);
       return;
     }
-
+    const type = newResourceType!;
     const resource: SubjectResource = {
       id: `resource-${type}-${Date.now()}`,
       type,
-      title: type === "note" ? "New note" : type === "link" ? "New link" : "New picture",
+      title: title || (type === "note" ? "New note" : type === "link" ? "New link" : type === "file" ? "New file" : "New picture"),
       createdAt: new Date().toISOString(),
       ...(activeFolderId ? { folderId: activeFolderId } : {}),
-      ...(type === "note" ? { body: "" } : type === "link" ? { url: "https://" } : { imageDataUrl: "", description: "" }),
+      ...(type === "note" ? { body: "" } : type === "link" ? { url: newResourceDraft.url || "https://" } : type === "file" ? { fileDataUrl: "", fileName: "", fileType: "" } : { imageDataUrl: "", description: "" }),
     };
     const nextResources = [...committedResources, resource];
     updateResources(nextResources);
     setDraftResources(nextResources);
+    setSelectedResourceId(resource.id);
+    setSelectedAssessmentId(null);
+    setEditingResourceId(resource.id);
     setHasUnsavedResourceChanges(false);
-    setShowFolderResourcePicker(false);
+    setNewResourceType(null);
   };
   const updateResource = (resourceId: string, patch: Partial<SubjectResource>) => {
     setDraftResources(resources.map((resource) => resource.id === resourceId ? { ...resource, ...patch } : resource));
@@ -7966,6 +9035,22 @@ function SubjectClassWorkPage({
     }
     const imageDataUrl = await prepareImageUpload(file, { maxWidth: 1200, maxHeight: 900, quality: 0.84 });
     updateResource(resourceId, { imageDataUrl });
+  };
+  const uploadFileResource = async (resourceId: string, file: File | undefined) => {
+    if (!file) return;
+    if (!ACCEPTED_FILE_MIME_TYPES.includes(file.type)) {
+      alert("Unsupported file type. Please upload a PDF, Word, Excel, or PowerPoint file.");
+      return;
+    }
+    if (file.size > MAX_FILE_UPLOAD_BYTES) {
+      alert(`File must be ${MAX_FILE_UPLOAD_LABEL} or smaller.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateResource(resourceId, { fileDataUrl: String(reader.result), fileName: file.name, fileType: file.type });
+    };
+    reader.readAsDataURL(file);
   };
   const removeFolder = (folderId: string) => {
     const folderToRemove = folders.find((folder) => folder.id === folderId);
@@ -8066,56 +9151,55 @@ function SubjectClassWorkPage({
     setExpandedFolderIds((current) => new Set(current).add(folderId));
     setDragTargetFolderId(null);
   };
-  const addAssessmentResource = () => {
-    const assessment = ensureAssessmentGrades(createAssessment(assessmentScales, activeFolderId), subjectClassStudents);
-    updateAssessments([...assessments, assessment]);
-    setSelectedAssessmentId(assessment.id);
-    setSelectedResourceId(null);
-    setEditingAssessmentId(assessment.id);
-    setShowFolderResourcePicker(false);
-  };
   const resourceTypePicker = (
     <div className="resource-type-grid">
-      <button className="resource-type-card" type="button" onClick={addFolder}>
+      <button className="resource-type-card" type="button" onClick={() => openNewResourceDraft("folder")}>
         <Folder size={34} />
         <span>
           <strong>Folder</strong>
           <small>Organise content into a course structure.</small>
         </span>
       </button>
-      <button className="resource-type-card" type="button" onClick={() => addResource("note")}>
+      <button className="resource-type-card" type="button" onClick={() => openNewResourceDraft("note")}>
         <FileText size={34} />
         <span>
           <strong>Note</strong>
           <small>Create simple text notes for learners.</small>
         </span>
       </button>
-      <button className="resource-type-card" type="button" onClick={() => addResource("link")}>
+      <button className="resource-type-card" type="button" onClick={() => openNewResourceDraft("link")}>
         <Link2 size={34} />
         <span>
           <strong>Link</strong>
           <small>Add an external learning resource.</small>
         </span>
       </button>
-      <button className="resource-type-card" type="button" onClick={() => addResource("picture")}>
+      <button className="resource-type-card" type="button" onClick={() => openNewResourceDraft("picture")}>
         <Image size={34} />
         <span>
           <strong>Picture with description</strong>
           <small>Upload an image and add learner-facing context.</small>
         </span>
       </button>
-      <button className="resource-type-card" type="button" onClick={addAssessmentResource}>
+      <button className="resource-type-card" type="button" onClick={() => openNewResourceDraft("assessment")}>
         <ClipboardCheck size={34} />
         <span>
           <strong>Assessment</strong>
           <small>Create work to grade students and provide feedback.</small>
         </span>
       </button>
-      <button className="resource-type-card" type="button" onClick={() => addResource("test")}>
+      <button className="resource-type-card" type="button" onClick={() => openNewResourceDraft("test")}>
         <CheckSquare size={34} />
         <span>
           <strong>Test</strong>
           <small>Create timed questions with autosaved student answers.</small>
+        </span>
+      </button>
+      <button className="resource-type-card" type="button" onClick={() => openNewResourceDraft("file")}>
+        <Paperclip size={34} />
+        <span>
+          <strong>File</strong>
+          <small>Upload a PDF, Word, Excel, or PowerPoint document.</small>
         </span>
       </button>
     </div>
@@ -8195,6 +9279,7 @@ function SubjectClassWorkPage({
                 className={[
                   "resource-tree-item resource-tree-resource",
                   selectedResourceId === resource.id ? "active-resource-tree-item" : "",
+                  resource.hidden ? "resource-tree-item--hidden" : "",
                 ].filter(Boolean).join(" ")}
                 draggable
                 key={resource.id}
@@ -8208,8 +9293,13 @@ function SubjectClassWorkPage({
                 style={{ "--tree-depth": depth } as React.CSSProperties}
               >
                 <span className="resource-tree-spacer" />
-                {resource.type === "note" ? <FileText size={16} /> : resource.type === "link" ? <Link2 size={16} /> : resource.type === "test" ? <CheckSquare size={16} /> : <Image size={16} />}
+                {resource.type === "note" ? <FileText size={16} /> : resource.type === "link" ? <Link2 size={16} /> : resource.type === "test" ? <CheckSquare size={16} /> : resource.type === "file" ? <Paperclip size={16} /> : <Image size={16} />}
                 <span>{resource.title}</span>
+                {resource.hidden ? (
+                  <button className="resource-tree-hidden-btn" type="button" title="Hidden from students — click to show" onClick={(e) => { e.stopPropagation(); updateResource(resource.id, { hidden: false }); }}>
+                    <EyeOff size={12} />
+                  </button>
+                ) : null}
               </button>
             ))}
             {childAssessments.map((assessment) => (
@@ -8217,6 +9307,7 @@ function SubjectClassWorkPage({
                 className={[
                   "resource-tree-item resource-tree-resource",
                   selectedAssessmentId === assessment.id ? "active-resource-tree-item" : "",
+                  assessment.hidden ? "resource-tree-item--hidden" : "",
                 ].filter(Boolean).join(" ")}
                 draggable
                 key={assessment.id}
@@ -8232,6 +9323,11 @@ function SubjectClassWorkPage({
                 <span className="resource-tree-spacer" />
                 <ClipboardCheck size={16} />
                 <span>{assessment.title}</span>
+                {assessment.hidden ? (
+                  <button className="resource-tree-hidden-btn" type="button" title="Hidden from students — click to show" onClick={(e) => { e.stopPropagation(); updateAssessment(assessment.id, { hidden: false }); }}>
+                    <EyeOff size={12} />
+                  </button>
+                ) : null}
               </button>
             ))}
             {canCreateSchoolWork ? (
@@ -8276,7 +9372,7 @@ function SubjectClassWorkPage({
             <label className="simulate-student-label">
               <UserRound size={14} />
               <select className="simulate-student-select" value="" onChange={(e) => e.target.value && setSimulatedStudentId(e.target.value)}>
-                <option value="">Simulate student...</option>
+                <option value="">Simulate student</option>
                 {subjectClassStudents.map((student) => (
                   <option key={student.id} value={student.id}>{student.firstName} {student.lastName}</option>
                 ))}
@@ -8299,6 +9395,7 @@ function SubjectClassWorkPage({
         <span className="subject-work-nav-tabs">
           <button className={activeWorkTab === "overview" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("overview"); }}>Overview</button>
           <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("resources"); }}>Resources</button>
+          <button className={activeWorkTab === "topics" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("topics"); }}>Topics</button>
           <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
             if (!confirmNavigation()) return;
             setActiveWorkTab("status");
@@ -8336,7 +9433,7 @@ function SubjectClassWorkPage({
                   <h3>{announcement.title}</h3>
                   <time>{formatDate(announcement.createdAt)}</time>
                 </div>
-                <p>{announcement.body}</p>
+                <div className="announcement-body" dangerouslySetInnerHTML={{ __html: announcement.body }} />
                 {effectiveAccessLevel !== "student" ? (
                   <div className="subject-announcement-actions">
                     <button className="secondary-action" type="button" onClick={() => setConfirmationAnnouncementId(announcement.id)}>
@@ -8373,7 +9470,7 @@ function SubjectClassWorkPage({
                 value={draftAnnouncement.title}
                 onChange={(title) => setDraftAnnouncement((current) => ({ ...current, title }))}
               />
-              <TextArea
+              <RichTextEditor
                 label="Announcement"
                 value={draftAnnouncement.body}
                 onChange={(body) => setDraftAnnouncement((current) => ({ ...current, body }))}
@@ -8417,7 +9514,20 @@ function SubjectClassWorkPage({
           {effectiveAccessLevel === "student" ? (
             <StudentGradebookView assessments={assessments} scales={assessmentScales} studentId={effectiveStudentId} />
           ) : !activeStatusSection ? (
-            <SchoolWorkStatusCards onOpenGrades={() => setActiveStatusSection("grades")} onOpenRemarks={() => setActiveStatusSection("remarks")} />
+            <SchoolWorkStatusCards onOpenGrades={() => setActiveStatusSection("grades")} onOpenRemarks={() => setActiveStatusSection("remarks")} onOpenTopics={() => setActiveStatusSection("topics")} hasTopics={(subjectClass.topics ?? []).length > 0} />
+          ) : activeStatusSection === "topics" ? (
+            <>
+              <button className="school-work-back-link" type="button" onClick={() => setActiveStatusSection(null)}>
+                <ArrowLeft size={16} />
+                Back to status and follow-up
+              </button>
+              <TopicPerformanceView
+                topics={subjectClass.topics ?? []}
+                assessments={assessments}
+                scales={assessmentScales}
+                students={subjectClassStudents}
+              />
+            </>
           ) : activeStatusSection === "remarks" ? (
             <>
               <button className="school-work-back-link" type="button" onClick={() => setActiveStatusSection(null)}>
@@ -8556,6 +9666,36 @@ function SubjectClassWorkPage({
           onBack={() => setActiveSettingsSection(null)}
         />
       ) : null}
+      {activeWorkTab === "topics" && canManageSchoolWorkSettings ? (
+        <section className="subject-overview-panel">
+          <div className="topic-tab-header">
+            <h3>Topics</h3>
+            <p>Define topics for this subject class, set the time period they are taught, and link a folder so that resources inside it appear here. Link assessments to topics to track student performance.</p>
+          </div>
+          <TopicSettings
+            topics={subjectClass.topics ?? []}
+            folders={folders}
+            resources={draftResources}
+            onChange={(topics) => onChange({ ...subjectClass, topics })}
+            onCreateFolder={(name) => {
+              const newFolder: ResourceFolder = { id: `folder-${Date.now()}`, name };
+              updateFolders([...folders, newFolder]);
+              return newFolder.id;
+            }}
+          />
+          {(subjectClass.topics ?? []).length > 0 ? (
+            <div className="topic-performance-section">
+              <h4>Student performance by topic</h4>
+              <TopicPerformanceView
+                topics={subjectClass.topics ?? []}
+                assessments={assessments}
+                scales={assessmentScales}
+                students={subjectClassStudents}
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       {activeWorkTab === "resources" ? (
         <div className="resource-workspace">
         <aside className="resource-tree-panel">
@@ -8619,23 +9759,70 @@ function SubjectClassWorkPage({
                 </button>
                 <button className="remove-button resource-remove-button" type="button" onClick={() => removeFolder(activeFolder.id)}>
                   <Trash2 size={16} />
-                  Delete folder
+                  Delete
                 </button>
               </div>
             ) : null}
           </div>
 
-          <div className="resource-content-list">
+          {newResourceType ? (
+            <div className="new-resource-form">
+              <div className="new-resource-form-header">
+                <p className="eyebrow">New {newResourceType === "assessment" ? "assessment" : newResourceType === "folder" ? "folder" : newResourceType === "note" ? "note" : newResourceType === "link" ? "link" : newResourceType === "picture" ? "picture" : newResourceType === "test" ? "test" : "file"}</p>
+                <h3>
+                  {newResourceType === "folder" ? <Folder size={18} /> : newResourceType === "note" ? <FileText size={18} /> : newResourceType === "link" ? <Link2 size={18} /> : newResourceType === "picture" ? <Image size={18} /> : newResourceType === "assessment" ? <ClipboardCheck size={18} /> : newResourceType === "test" ? <CheckSquare size={18} /> : <Paperclip size={18} />}
+                  {newResourceDraft.title.trim() || (newResourceType === "folder" ? "New folder" : newResourceType === "note" ? "New note" : newResourceType === "link" ? "New link" : newResourceType === "picture" ? "New picture" : newResourceType === "assessment" ? "New assessment" : newResourceType === "test" ? "New test" : "New file")}
+                </h3>
+              </div>
+              <div className="new-resource-form-fields">
+                {newResourceType !== "folder" && newResourceType !== "file" ? (
+                  <TextInput label="Title" value={newResourceDraft.title} onChange={(title) => setNewResourceDraft((d) => ({ ...d, title }))} />
+                ) : null}
+                {newResourceType === "folder" ? (
+                  <TextInput label="Folder name" value={newResourceDraft.title} onChange={(title) => setNewResourceDraft((d) => ({ ...d, title }))} />
+                ) : null}
+                {newResourceType === "link" ? (
+                  <TextInput label="URL" value={newResourceDraft.url} onChange={(url) => setNewResourceDraft((d) => ({ ...d, url }))} />
+                ) : null}
+                {newResourceType === "assessment" ? (
+                  <>
+                    <DateInput label="Due date" value={newResourceDraft.date} onChange={(date) => setNewResourceDraft((d) => ({ ...d, date }))} />
+                    <SelectInput label="Format" value={newResourceDraft.format} options={assessmentFormatOptions} onChange={(format) => setNewResourceDraft((d) => ({ ...d, format }))} />
+                    <SelectInput label="Assessment scale" value={newResourceDraft.scaleId} options={assessmentScales.map((s) => ({ value: s.id, label: s.name }))} onChange={(scaleId) => setNewResourceDraft((d) => ({ ...d, scaleId }))} />
+                    {(subjectClass.topics ?? []).length > 0 ? (
+                      <div className="field-label">
+                        Topics
+                        <div className="assessment-topic-checklist">
+                          {(subjectClass.topics ?? []).map((topic) => (
+                            <label key={topic.id} className="assessment-topic-check-row">
+                              <input type="checkbox" checked={newResourceDraft.topicIds.includes(topic.id)} onChange={() => setNewResourceDraft((d) => ({ ...d, topicIds: d.topicIds.includes(topic.id) ? d.topicIds.filter((id) => id !== topic.id) : [...d.topicIds, topic.id] }))} />
+                              {topic.name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+              <div className="new-resource-form-actions">
+                <button className="primary-action" type="button" onClick={confirmNewResource}>Create</button>
+                <button className="secondary-action" type="button" onClick={cancelNewResource}>Cancel</button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="resource-content-list" style={newResourceType ? { display: "none" } : undefined}>
             {selectedResource ? (
               <article className="resource-list-item resource-detail-card">
                 <div className="resource-list-item-heading">
-                  {selectedResource.type === "note" ? <FileText size={22} /> : selectedResource.type === "link" ? <Link2 size={22} /> : selectedResource.type === "test" ? <CheckSquare size={22} /> : <Image size={22} />}
-                  {selectedResource.type === "note" && editingResourceId !== selectedResource.id ? <span /> : <strong>{selectedResource.title}</strong>}
+                  {selectedResource.type === "note" ? <FileText size={22} /> : selectedResource.type === "link" ? <Link2 size={22} /> : selectedResource.type === "test" ? <CheckSquare size={22} /> : selectedResource.type === "file" ? <Paperclip size={22} /> : <Image size={22} />}
+                  <strong>{selectedResource.title}</strong>
                   {canCreateSchoolWork ? <div className="resource-detail-actions">
                     {editingResourceId === selectedResource.id ? (
-                      <button className="secondary-action" type="button" onClick={saveResourceChanges} disabled={!hasUnsavedResourceChanges}>
+                      <button className="secondary-action" type="button" onClick={!hasUnsavedResourceChanges ? () => setEditingResourceId(null) : saveResourceChanges}>
                         <Save size={16} />
-                        {selectedResource.type === "test" ? "Done" : "Save"}
+                        Done
                       </button>
                     ) : (
                       <button className="secondary-action" type="button" onClick={() => setEditingResourceId(selectedResource.id)}>
@@ -8671,9 +9858,24 @@ function SubjectClassWorkPage({
                         {selectedResource.imageDataUrl ? <img className="resource-picture-preview" src={selectedResource.imageDataUrl} alt="" /> : null}
                         <TextArea label="Description" value={selectedResource.description ?? ""} onChange={(description) => updateResource(selectedResource.id, { description })} />
                       </>
+                    ) : selectedResource.type === "file" ? (
+                      <>
+                        <label className="field-label">
+                          File <small style={{ fontWeight: 400, color: "#5d6862" }}>(PDF, Word, Excel, PowerPoint — max {MAX_FILE_UPLOAD_LABEL})</small>
+                          <input type="file" accept={ACCEPTED_FILE_TYPES} onChange={(event) => void uploadFileResource(selectedResource.id, event.target.files?.[0])} />
+                        </label>
+                        {selectedResource.fileName ? <p className="resource-file-name"><Paperclip size={14} /> {selectedResource.fileName}</p> : null}
+                      </>
                     ) : (
                       <TextArea label="Note" value={selectedResource.body ?? ""} onChange={(body) => updateResource(selectedResource.id, { body })} />
                     )}
+                    <div className="resource-edit-footer">
+                      <CheckboxInput
+                        label="Visible to students"
+                        checked={!selectedResource.hidden}
+                        onChange={(visible) => updateResource(selectedResource.id, { hidden: !visible })}
+                      />
+                    </div>
                   </>
                 ) : (
                   <div className={selectedResource.type === "note" ? "resource-note-readonly" : "resource-readonly-content"}>
@@ -8713,6 +9915,13 @@ function SubjectClassWorkPage({
                         {selectedResource.imageDataUrl ? <img src={selectedResource.imageDataUrl} alt="" /> : <span>No picture uploaded.</span>}
                         <p>{selectedResource.description || "No description yet."}</p>
                       </div>
+                    ) : selectedResource.type === "file" ? (
+                      selectedResource.fileDataUrl ? (
+                        <a className="resource-file-download" href={selectedResource.fileDataUrl} download={selectedResource.fileName}>
+                          <Paperclip size={18} />
+                          {selectedResource.fileName || "Download file"}
+                        </a>
+                      ) : <span>No file uploaded yet.</span>
                     ) : (
                       <>
                         <h3>{selectedResource.title}</h3>
@@ -8742,6 +9951,7 @@ function SubjectClassWorkPage({
                   <AssessmentFields
                     assessment={selectedAssessment}
                     scales={assessmentScales}
+                    topics={subjectClass.topics ?? []}
                     onChange={(assessment) => updateAssessment(selectedAssessment.id, assessment)}
                   />
                 </article>
@@ -8809,7 +10019,7 @@ function SubjectClassWorkPage({
                       </article>
                     ))}
                     {folderAssessments.map((assessment) => (
-                      <article className="resource-list-item folder-resource-item resource-preview-item" key={assessment.id}>
+                      <article className={`resource-list-item folder-resource-item resource-preview-item${assessment.hidden ? " resource-hidden-item" : ""}`} key={assessment.id}>
                         <button type="button" onClick={() => selectAssessment(assessment)}>
                           <ClipboardCheck size={22} />
                           <span>
@@ -8817,6 +10027,16 @@ function SubjectClassWorkPage({
                             <small>{formatAssessmentDate(assessment)} · {assessment.format} · {assessment.requiresTurnIn ? "Turn-in required" : "No turn-in required"}</small>
                           </span>
                         </button>
+                        {canCreateSchoolWork ? (
+                          <button
+                            className={`resource-visibility-toggle${assessment.hidden ? " resource-visibility-toggle--hidden" : ""}`}
+                            type="button"
+                            title={assessment.hidden ? "Hidden from students — click to show" : "Visible to students — click to hide"}
+                            onClick={() => updateAssessment(assessment.id, { hidden: !assessment.hidden })}
+                          >
+                            {assessment.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        ) : null}
                       </article>
                     ))}
                   </>
@@ -9108,6 +10328,102 @@ function getTestTimerLabel(test: SubjectResource) {
   return "No timer";
 }
 
+function formatBillingPeriod(period: string): string {
+  if (period.length === 4) return period;
+  const [y, m] = period.split("-");
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function getDaysInMonthFn(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+function getDaysInYear(year: number): number {
+  return new Date(year, 1, 29).getDate() === 29 ? 366 : 365;
+}
+
+function formatKES(amount: number): string {
+  return `KES ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function getPaidAmount(payment: SchoolPayment): number {
+  return payment.records.reduce((sum, r) => sum + r.amount, 0);
+}
+
+function computePaymentStatus(payment: SchoolPayment): SchoolPayment["status"] {
+  const paid = getPaidAmount(payment);
+  if (paid <= 0) return new Date(payment.dueDate) > new Date() ? "upcoming" : "outstanding";
+  if (paid >= payment.totalAmount) return "paid";
+  return "partial";
+}
+
+function generatePayment(school: School, period: string): SchoolPayment | null {
+  const sub = school.subscription;
+  if (!sub || sub.plan === "free") return null;
+  const isYearly = sub.interval === "yearly";
+  const lineItems: PaymentLineItem[] = [];
+
+  if (isYearly && period.length === 4) {
+    const year = parseInt(period);
+    const daysInYear = getDaysInYear(year);
+    const periodStart = new Date(year, 0, 1);
+    const periodEnd = new Date(year, 11, 31);
+    if (sub.plan === "fixed" && sub.fixedPrice !== undefined) {
+      lineItems.push({ description: `Fixed subscription — ${period}`, unitPrice: sub.fixedPrice, amount: sub.fixedPrice });
+    } else if (sub.plan === "per-student" && sub.pricePerStudent !== undefined) {
+      for (const student of school.students.filter((s) => !s.accountDisabled)) {
+        const ea = student.enrolledAt ? new Date(student.enrolledAt) : null;
+        if (!ea || ea <= periodStart) {
+          lineItems.push({ description: `${student.firstName} ${student.lastName}`, unitPrice: sub.pricePerStudent, amount: sub.pricePerStudent });
+        } else if (ea <= periodEnd) {
+          const dayOfYear = Math.floor((ea.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + 1;
+          const days = daysInYear - dayOfYear + 1;
+          const amount = Math.round((sub.pricePerStudent * days / daysInYear) * 100) / 100;
+          lineItems.push({ description: `${student.firstName} ${student.lastName} (${days}/${daysInYear} days)`, unitPrice: sub.pricePerStudent, days, daysInPeriod: daysInYear, amount });
+        }
+      }
+    }
+    const totalAmount = lineItems.reduce((sum, i) => sum + i.amount, 0);
+    return { id: `payment-${period}-${Date.now()}`, period, dueDate: `${year + 1}-01-07`, status: "upcoming", totalAmount, lineItems, records: [], comments: [], generatedAt: new Date().toISOString() };
+  }
+
+  if (!isYearly && period.length === 7) {
+    const [yearStr, monthStr] = period.split("-");
+    const year = parseInt(yearStr);
+    const month = parseInt(monthStr);
+    const dim = getDaysInMonthFn(year, month);
+    const periodStart = new Date(year, month - 1, 1);
+    const periodEnd = new Date(year, month - 1, dim);
+    const nm = month === 12 ? 1 : month + 1;
+    const ny = month === 12 ? year + 1 : year;
+    const dueDate = `${ny}-${String(nm).padStart(2, "0")}-07`;
+    if (sub.plan === "fixed" && sub.fixedPrice !== undefined) {
+      lineItems.push({ description: `Fixed subscription — ${formatBillingPeriod(period)}`, unitPrice: sub.fixedPrice, amount: sub.fixedPrice });
+    } else if (sub.plan === "per-student" && sub.pricePerStudent !== undefined) {
+      for (const student of school.students.filter((s) => !s.accountDisabled)) {
+        const ea = student.enrolledAt ? new Date(student.enrolledAt) : null;
+        if (!ea || ea <= periodStart) {
+          lineItems.push({ description: `${student.firstName} ${student.lastName}`, unitPrice: sub.pricePerStudent, amount: sub.pricePerStudent });
+        } else if (ea <= periodEnd) {
+          const days = dim - ea.getDate() + 1;
+          const amount = Math.round((sub.pricePerStudent * days / dim) * 100) / 100;
+          lineItems.push({ description: `${student.firstName} ${student.lastName} (${days}/${dim} days)`, unitPrice: sub.pricePerStudent, days, daysInPeriod: dim, amount });
+        }
+      }
+    }
+    const totalAmount = lineItems.reduce((sum, i) => sum + i.amount, 0);
+    return { id: `payment-${period}-${Date.now()}`, period, dueDate, status: "upcoming", totalAmount, lineItems, records: [], comments: [], generatedAt: new Date().toISOString() };
+  }
+
+  return null;
+}
+
+function getCurrentPeriod(interval: "monthly" | "yearly"): string {
+  const now = new Date();
+  if (interval === "monthly") return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return String(now.getFullYear());
+}
+
 function formatAssessmentScaleSummary(scale: AssessmentScale) {
   if (scale.levels.length > 12) {
     const numericValues = scale.levels.map((level) => Number(level.value)).filter(Number.isFinite);
@@ -9276,12 +10592,33 @@ function SchoolHeader({
   currentPage,
   hideNav = false,
   actions,
+  globalCategories,
 }: {
   school: School;
   currentPage?: string;
   hideNav?: boolean;
   actions?: React.ReactNode;
+  globalCategories?: AboutCategory[];
 }) {
+  const [loadedCategories, setLoadedCategories] = useState<AboutCategory[]>(() => globalAboutCache?.categories ?? []);
+  useEffect(() => {
+    if (!globalAboutCache) {
+      void getGlobalAboutConfig().then((config) => {
+        globalAboutCache = config;
+        setLoadedCategories(config.categories);
+      });
+    }
+  }, []);
+  const globalCats = globalCategories ?? loadedCategories;
+  const schoolCats = school.aboutCategories ?? [];
+  const globalCatIds = new Set(globalCats.map((c) => c.id));
+  const allNavCategories = [
+    ...globalCats.filter((c) => c.id !== "about" && c.id !== "global-about"),
+    ...schoolCats.filter((c) => !globalCatIds.has(c.id)),
+  ];
+
+  const getCategoryHref = (cat: AboutCategory) => `/${school.id}/${cat.id}`;
+
   return (
     <header className="school-header">
       <button className="school-brand" onClick={() => navigate(`/${school.id}`)}>
@@ -9292,7 +10629,9 @@ function SchoolHeader({
         <a href={`/${school.id}`} className={currentPage === "home" ? "active" : ""}>Home</a>
         <a href={`/${school.id}/about`} className={currentPage === "about" ? "active" : ""}>About</a>
         <a href={`/${school.id}/for-students-and-guardians`} className={currentPage === "students" ? "active" : ""}>For students and guardians</a>
-        <a href="#contact" className={currentPage === "contact" ? "active" : ""}>Contact</a>
+        {allNavCategories.map((cat) => (
+          <a key={cat.id} href={getCategoryHref(cat)} className={currentPage === cat.id ? "active" : ""}>{cat.title}</a>
+        ))}
         <a href={`/${school.id}/schoolwork`} className="school-lms-login-button">LMS login</a>
       </nav>}
     </header>
@@ -9591,7 +10930,7 @@ function ImageUpload({
     try {
       const nextImage = await prepareImageUpload(file,
         variant === "logo" || variant === "strictSquare"
-          ? { requireSquare: true, maxWidth: 512, maxHeight: 512, quality: 0.88 }
+          ? { requireSquare: true, maxWidth: 512, maxHeight: 512, quality: 0.88, format: "png" as const }
           : variant === "square"
             ? { cropSquare: true, maxWidth: 512, maxHeight: 512, quality: 0.82 }
             : { maxWidth: 1600, maxHeight: 900, quality: 0.84 });
@@ -9754,12 +11093,14 @@ function prepareImageUpload(
     quality,
     cropSquare = false,
     requireSquare = false,
+    format = "jpeg",
   }: {
     maxWidth: number;
     maxHeight: number;
     quality: number;
     cropSquare?: boolean;
     requireSquare?: boolean;
+    format?: "jpeg" | "png";
   },
 ) {
   return new Promise<string>((resolve, reject) => {
@@ -9801,7 +11142,7 @@ function prepareImageUpload(
           canvas.width = size;
           canvas.height = size;
           context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
-          resolve(canvas.toDataURL("image/jpeg", quality));
+          resolve(canvas.toDataURL(format === "png" ? "image/png" : "image/jpeg", quality));
           return;
         }
 
@@ -9812,7 +11153,7 @@ function prepareImageUpload(
         canvas.width = targetWidth;
         canvas.height = targetHeight;
         context.drawImage(image, 0, 0, targetWidth, targetHeight);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        resolve(canvas.toDataURL(format === "png" ? "image/png" : "image/jpeg", quality));
       };
       image.src = String(reader.result);
     };
@@ -9889,8 +11230,9 @@ function PublicSchoolLoadingPage({ schoolId, currentPage }: { schoolId: string; 
   const loadingSchool = getCachedSchool(schoolId) ?? getLocalSchool(schoolId) ?? {
     ...sampleSchool,
     id: schoolId,
-    name: "School page",
+    name: "",
     tagline: "",
+    heroImage: "",
     showWebsite: true,
   };
 
