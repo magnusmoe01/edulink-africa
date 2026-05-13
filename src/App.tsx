@@ -82,6 +82,7 @@ import {
   faUsers,
 } from "@fortawesome/free-solid-svg-icons";
 import { SchoolChatPopup } from "./components/SchoolChatPopup";
+import { PublishedTimetableView, TimetablePage } from "./components/Timetable";
 import { sampleSchool } from "./data/sampleSchool";
 import {
   defaultGlobalAboutConfig,
@@ -103,10 +104,10 @@ import {
   updateSuperAdminProfile,
 } from "./lib/schools";
 import { auth, createAuthUser, hasFirebaseConfig } from "./lib/firebase";
-import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, PaymentComment, PaymentLineItem, PaymentRecord, Remark, RemarkCategory, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolPayment, SchoolRemarkSettings, SchoolSubscription, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource, SubmissionFile, SupportTicket, Topic } from "./types";
+import type { AboutCategory, AboutPage, AdminProfile, Assessment, AssessmentGrade, AssessmentScale, CalendarItem, ClassGroup, GlobalAboutConfig, GlobalAboutPage, GlobalSchoolWorkConfig, Guardian, NewsItem, PaymentComment, PaymentLineItem, PaymentRecord, Remark, RemarkCategory, ResourceFolder, School, SchoolChatMessage, SchoolGradeLevel, SchoolPayment, SchoolRemarkSettings, SchoolSubscription, SchoolTimetable, SchoolWorkSettings, StaffMember, Student, Subject, SubjectClass, SubjectClassAnnouncement, SubjectResource, SubmissionFile, SupportTicket, Topic } from "./types";
 
-type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "loginSettings" | "billing";
-type EditorCategory = "schoolPage" | "people" | "academics" | "schoolWork" | "settings" | "billing";
+type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "loginSettings" | "billing" | "timetable";
+type EditorCategory = "website" | "people" | "schoolWork" | "settings" | "administrative";
 
 const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
 const MAX_IMAGE_UPLOAD_LABEL = "1MB";
@@ -166,6 +167,7 @@ const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "schoolWork", label: "Subject class pages" },
   { id: "loginSettings", label: "Login format" },
   { id: "billing", label: "Billing" },
+  { id: "timetable", label: "Timetable" },
 ];
 
 const editorCategories: Array<{
@@ -173,42 +175,45 @@ const editorCategories: Array<{
   label: string;
   description: string;
   sections: EditorSection[];
+  groups?: Array<{ label: string; sections: EditorSection[] }>;
 }> = [
   {
-    id: "schoolPage",
-    label: "School page",
+    id: "website",
+    label: "Website",
     description: "Public website content, contact details, pages, news, and calendar.",
     sections: ["profile", "contact", "about", "news", "calendar"],
   },
   {
     id: "people",
-    label: "People",
-    description: "Staff, administrators, students, access rights, guardians, and learner records.",
-    sections: ["staff", "students", "access"],
-  },
-  {
-    id: "academics",
-    label: "Academics",
-    description: "Grades, classes, subject classes, and subject catalog.",
-    sections: ["grades", "classes", "subjectClasses", "subjects"],
+    label: "People & Academics",
+    description: "Staff, students, access, grades, classes, and subjects.",
+    sections: ["staff", "students", "grades", "classes", "subjectClasses", "subjects"],
+    groups: [
+      { label: "People", sections: ["staff", "students"] },
+      { label: "Academics", sections: ["grades", "classes", "subjectClasses", "subjects"] },
+    ],
   },
   {
     id: "schoolWork",
-    label: "School work",
+    label: "EduLink LMS",
     description: "Course materials and subject class work.",
     sections: ["schoolWork"],
   },
   {
-    id: "settings",
-    label: "Settings",
-    description: "School-level access and platform preferences.",
-    sections: ["loginSettings"],
+    id: "administrative",
+    label: "Administrative",
+    description: "Timetable scheduling and school operations.",
+    sections: ["timetable"],
   },
   {
-    id: "billing",
-    label: "Billing",
-    description: "Subscription plan, invoices, and payment history.",
-    sections: ["billing"],
+    id: "settings",
+    label: "Settings",
+    description: "Login format, access control, subscription plan, and payment history.",
+    sections: ["loginSettings", "access", "billing"],
+    groups: [
+      { label: "Platform", sections: ["loginSettings", "access"] },
+      { label: "Billing", sections: ["billing"] },
+    ],
   },
 ];
 
@@ -245,7 +250,7 @@ function parseRoute(): Route {
   if (segments[0] && segments[1] === "admin") {
     return { view: "admin", id: segments[0] };
   }
-  if (segments[0] && segments[1] === "schoolwork") {
+  if (segments[0] && segments[1] === "lms") {
     return { view: "schoolWorkPortal", id: segments[0] };
   }
   if (segments[0] && segments[1] === "about" && segments[2]) {
@@ -356,11 +361,11 @@ function LandingPage() {
   const lmsFeatures = [
     { icon: Folder, title: "Subject class spaces", text: "Create subject classes with teachers, students, folders, files, links, and learning resources." },
     { icon: ClipboardCheck, title: "Assignments and assessment", text: "Set tasks, collect submissions, record marks, and use global or school-specific assessment scales." },
-    { icon: UserRound, title: "Teacher and student access", text: "Route admins, teachers, and students into the right workspace with role-aware SchoolWork views." },
+    { icon: UserRound, title: "Teacher and student access", text: "Route admins, teachers, and students into the right workspace with role-aware EduLink LMS views." },
   ];
   const platformPillars = [
     "Website content management",
-    "SchoolWork LMS",
+    "EduLink LMS",
     "Staff, learners, and guardians",
     "Assessments and resources",
     "Admin dashboards",
@@ -370,12 +375,12 @@ function LandingPage() {
   const openLmsDemoView = (view: "admin" | "student") => {
     setLmsDemoChooserOpen(false);
     if (view === "admin") {
-      openInNewTab(`/${sampleSchool.id}/schoolwork?simulateRole=admin`);
+      openInNewTab(`/${sampleSchool.id}/lms?simulateRole=admin`);
       return;
     }
 
     const params = new URLSearchParams({ simulateRole: "student", simulateId: demoStudent?.id ?? "student-001" });
-    openInNewTab(`/${sampleSchool.id}/schoolwork?${params.toString()}`);
+    openInNewTab(`/${sampleSchool.id}/lms?${params.toString()}`);
   };
 
   const registerSchool = async () => {
@@ -516,7 +521,7 @@ function LandingPage() {
               <SchoolIcon />
               <div>
                 <h2>Register school</h2>
-                <p>Create the school site and admin dashboard, then enable SchoolWork for classes.</p>
+                <p>Create the school site and admin dashboard, then enable EduLink LMS for classes.</p>
               </div>
             </div>
             <label>
@@ -560,7 +565,7 @@ function LandingPage() {
           <p className="eyebrow">Website plus learning platform</p>
           <h2>A public front door connected to the work happening inside school.</h2>
           <p>
-            The homepage supports everyday school communication, while SchoolWork gives teachers and learners
+            The homepage supports everyday school communication, while EduLink LMS gives teachers and learners
             the structure they need for lessons, resources, tasks, submissions, and assessment.
           </p>
         </div>
@@ -590,7 +595,7 @@ function LandingPage() {
       <section className="feature-band lms-band">
         <div className="marketing-section-heading">
           <p className="eyebrow">Fully working LMS</p>
-          <h2>SchoolWork supports actual teaching, not just a brochure page.</h2>
+          <h2>EduLink LMS supports actual teaching, not just a brochure page.</h2>
           <p>Teachers can organize learning materials, manage subject classes, assess work, and give learners a focused place to study.</p>
         </div>
         <div className="feature-grid">
@@ -753,7 +758,7 @@ function LoginPage() {
         <div>
           <p className="eyebrow">Admin access</p>
           <h1>Login</h1>
-          <p>School admins go to their editor. Staff and students go to SchoolWork.</p>
+          <p>School admins go to their editor. Staff and students go to EduLink LMS.</p>
         </div>
         <form
           onSubmit={(event) => {
@@ -829,20 +834,20 @@ async function redirectSignedInUser(user: User, setStatus: (status: string) => v
       return;
     }
 
-    const staffSchool = schools.find((school) => school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && !isStaffAccountDisabled(member)));
+    const staffSchool = schools.find((school) => school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && !isStaffAccountDisabled(member) && !isStaffDeleted(member)));
     if (staffSchool) {
-      navigate(`/${staffSchool.id}/schoolwork`);
+      navigate(`/${staffSchool.id}/lms`);
       return;
     }
 
-    if (schools.some((school) => school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && isStaffAccountDisabled(member)))) {
+    if (schools.some((school) => school.staff.some((member) => member.email?.toLowerCase() === normalizedEmail && (isStaffAccountDisabled(member) || isStaffDeleted(member))))) {
       setStatus("This staff account is disabled.");
       return;
     }
 
     const studentSchool = schools.find((school) => school.students.some((student) => student.email?.toLowerCase() === normalizedEmail && !student.accountDisabled));
     if (studentSchool) {
-      navigate(`/${studentSchool.id}/schoolwork`);
+      navigate(`/${studentSchool.id}/lms`);
       return;
     }
 
@@ -1207,6 +1212,12 @@ function StudentsGuardiansPage({ schoolId }: { schoolId: string }) {
         </aside>
       </section>
 
+      {school.timetable?.publishedVersionId ? (
+        <section className="school-section">
+          <PublishedTimetableView school={school} />
+        </section>
+      ) : null}
+
       <SchoolFooter school={school} />
     </main>
   );
@@ -1319,13 +1330,13 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
   };
   const backToSubjectClasses = () => {
     setActiveSubjectClassId(null);
-    window.history.replaceState({}, "", `/${school.id}/schoolwork${window.location.search.replace(/([?&])subjectClassId=[^&]*/g, "$1").replace(/[?&]$/, "").replace("?&", "?")}`);
+    window.history.replaceState({}, "", `/${school.id}/lms${window.location.search.replace(/([?&])subjectClassId=[^&]*/g, "$1").replace(/[?&]$/, "").replace("?&", "?")}`);
   };
   const roleLabel = identity?.role ? identity.role.charAt(0).toUpperCase() + identity.role.slice(1) : "";
 
   const portalContent = !identity ? (
     <div className="empty-editor-state">
-      <h3>No SchoolWork access</h3>
+      <h3>No EduLink LMS access</h3>
       <p>This account is not registered as a staff member or student at this school.</p>
     </div>
   ) : selectedSubjectClass ? (
@@ -1450,7 +1461,7 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
           <div className="portal-heading">
             <div>
               <h1>{school.name}</h1>
-              <p>{identity ? `${identity.label} · ${roleLabel}` : "Sign in with a staff or student account to view SchoolWork."}</p>
+              <p>{identity ? `${identity.label} · ${roleLabel}` : "Sign in with a staff or student account to view EduLink LMS."}</p>
             </div>
             {hasFirebaseConfig ? (
               user ? <button className="secondary-action" type="button" onClick={() => void logout()}>Sign out</button> : (
@@ -1809,10 +1820,10 @@ function AdminPage({ schoolId }: { schoolId: string }) {
       if (firstSubjectClass) {
         params.set("subjectClassId", firstSubjectClass.id);
       }
-      navigate(`/${school.id}/schoolwork?${params.toString()}`);
+      navigate(`/${school.id}/lms?${params.toString()}`);
     } else {
       const params = new URLSearchParams({ simulateRole: role, simulateId: id });
-      navigate(`/${school.id}/schoolwork?${params.toString()}`);
+      navigate(`/${school.id}/lms?${params.toString()}`);
     }
   };
 
@@ -2016,7 +2027,27 @@ function AdminPage({ schoolId }: { schoolId: string }) {
                   </button>
                 ) : null}
               </div>
-              <EditorMenu activeCategory={activeCategory} activeSection={activeSection} onChange={openEditorCategory} />
+              <EditorMenu
+                activeCategory={activeCategory}
+                activeSection={activeSection}
+                onChange={openEditorCategory}
+                hiddenCategories={(() => {
+                  if (profile?.superAdmin) return [];
+                  const hidden: EditorCategory[] = [];
+                  if (school.platformAdminEmail && adminUser?.email?.toLowerCase() !== school.platformAdminEmail.toLowerCase()) {
+                    hidden.push("settings");
+                  }
+                  const currentStaff = school.staff.find((m) => m.email?.toLowerCase() === adminUser?.email?.toLowerCase());
+                  if (currentStaff?.allowedAdminCategories?.length) {
+                    for (const cat of editorCategories) {
+                      if (!currentStaff.allowedAdminCategories.includes(cat.id) && !hidden.includes(cat.id)) {
+                        hidden.push(cat.id);
+                      }
+                    }
+                  }
+                  return hidden;
+                })()}
+              />
             </>
           )}
         </aside>
@@ -2032,6 +2063,7 @@ function AdminPage({ schoolId }: { schoolId: string }) {
           activeSection={activeSection}
           currentUserEmail={adminUser?.email ?? null}
           canAccessAllSubjectClasses={canManageSchool(profile, school.id, adminUser?.email, school)}
+          isSuperAdmin={Boolean(profile?.superAdmin)}
           onSimulateStaff={(staffMember) => staffMember.email ? simulateSchoolWorkUser("staff", staffMember.email) : undefined}
           onSimulateStudent={(student) => simulateSchoolWorkUser("student", student.id)}
           onBack={() => setActiveSection(null)}
@@ -2048,7 +2080,7 @@ function SuperAdminPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [globalAbout, setGlobalAbout] = useState<GlobalAboutConfig>(defaultGlobalAboutConfig);
   const [globalSchoolWork, setGlobalSchoolWork] = useState<GlobalSchoolWorkConfig>(defaultGlobalSchoolWorkConfig);
-  const [superAdminView, setSuperAdminView] = useState<"schools" | "supportTickets" | "globalPages" | "schoolWorkSettings" | "superAdmins" | "subscriptions" | "payments">("schools");
+  const [superAdminView, setSuperAdminView] = useState<"schools" | "supportTickets" | "globalPages" | "schoolWorkSettings" | "superAdmins" | "subscriptions" | "payments" | "users">("schools");
   const [query, setQuery] = useState("");
   const [newSuperAdminEmail, setNewSuperAdminEmail] = useState("");
   const [newSuperAdminName, setNewSuperAdminName] = useState("");
@@ -2144,10 +2176,10 @@ function SuperAdminPage() {
 
   const saveGlobalSchoolWork = async () => {
     if (hasFirebaseConfig && !profile?.superAdmin) {
-      setStatus("Only superadmins can save schoolwork settings");
+      setStatus("Only superadmins can save lms settings");
       return;
     }
-    setStatus("Saving schoolwork settings...");
+    setStatus("Saving lms settings...");
     await saveGlobalSchoolWorkConfig(globalSchoolWork);
     setGlobalSchoolWork(await getGlobalSchoolWorkConfig());
     setStatus("Schoolwork settings saved");
@@ -2413,6 +2445,14 @@ function SuperAdminPage() {
               <Receipt size={18} />
               Payments
             </button>
+            <button
+              className={superAdminView === "users" ? "active-superadmin-nav" : ""}
+              type="button"
+              onClick={() => setSuperAdminView("users")}
+            >
+              <UserRound size={18} />
+              Users
+            </button>
           </nav>
         </aside>
 
@@ -2427,6 +2467,8 @@ function SuperAdminPage() {
             <SubscriptionsPanel schools={schools} onUpdate={updateSubscription} />
           ) : superAdminView === "payments" ? (
             <PaymentsPanel schools={schools} onUpdatePayment={(schoolId, payment) => updatePayment(schoolId, payment)} />
+          ) : superAdminView === "users" ? (
+            <UsersPanel schools={schools} />
           ) : superAdminView === "superAdmins" ? (
             <EditorPanel title="Superadmins">
               {superAdmins.length > 0 ? (
@@ -2586,7 +2628,7 @@ function SuperAdminPage() {
                     ) : null}
                   </article>
                 ))}
-                {filteredSchools.length === 0 ? (
+                {filteredSchools.length === 0 && status !== "Loading..." ? (
                   <div className="empty-state">
                     <h3>No schools found</h3>
                     <p>Try another search term or create a new school.</p>
@@ -2598,6 +2640,123 @@ function SuperAdminPage() {
         </section>
       </section>
     </main>
+  );
+}
+
+function UsersPanel({ schools }: { schools: School[] }) {
+  const [userQuery, setUserQuery] = useState("");
+  const [schoolFilter, setSchoolFilter] = useState("");
+
+  type UserRow = {
+    key: string;
+    name: string;
+    schoolId: string;
+    schoolName: string;
+    role: string;
+    email: string;
+    simulateAdminUrl: string | null;
+    simulateWorkUrl: string | null;
+  };
+
+  const rows: UserRow[] = schools.flatMap((school) => {
+    const adminEmails = getSchoolAdminEmails(school);
+    const staffRows: UserRow[] = school.staff.map((member) => {
+      const isAdmin = Boolean(member.email && adminEmails.map((e) => e.toLowerCase()).includes(member.email!.toLowerCase()));
+      const isTeacher = hasStaffCategory(member, "Teacher");
+      const role = isAdmin ? "Admin" : isTeacher ? "Teacher" : "Staff";
+      const workParams = isAdmin
+        ? new URLSearchParams({ simulateRole: "admin" })
+        : new URLSearchParams({ simulateRole: "staff", simulateId: member.email ?? "" });
+      return {
+        key: `${school.id}-staff-${member.email ?? member.name}`,
+        name: member.name,
+        schoolId: school.id,
+        schoolName: school.name,
+        role,
+        email: member.email ?? "—",
+        simulateAdminUrl: isAdmin ? `/${school.id}/admin?simulateRole=admin` : null,
+        simulateWorkUrl: member.email ? `/${school.id}/lms?${workParams.toString()}` : null,
+      };
+    });
+    const studentRows: UserRow[] = school.students.map((student) => ({
+      key: `${school.id}-student-${student.id}`,
+      name: `${student.firstName} ${student.lastName}`,
+      schoolId: school.id,
+      schoolName: school.name,
+      role: "Student",
+      email: student.email ?? "—",
+      simulateAdminUrl: null,
+      simulateWorkUrl: `/${school.id}/lms?${new URLSearchParams({ simulateRole: "student", simulateId: student.id }).toString()}`,
+    }));
+    return [...staffRows, ...studentRows];
+  });
+
+  const q = userQuery.toLowerCase();
+  const filtered = rows.filter((row) =>
+    (!schoolFilter || row.schoolId === schoolFilter) &&
+    (!q || row.name.toLowerCase().includes(q) || row.email.toLowerCase().includes(q) || row.role.toLowerCase().includes(q))
+  );
+
+  const schoolOptions = [
+    { value: "", label: "All schools" },
+    ...schools.map((s) => ({ value: s.id, label: s.name })),
+  ];
+
+  return (
+    <EditorPanel title="Users">
+      <div className="users-panel-filters">
+        <label className="field-label">
+          Search
+          <span className="input-shell">
+            <Search size={18} />
+            <input value={userQuery} onChange={(e) => setUserQuery(e.target.value)} placeholder="Name or email…" />
+          </span>
+        </label>
+        <SelectInput label="School" value={schoolFilter} options={schoolOptions} onChange={setSchoolFilter} />
+      </div>
+      {filtered.length === 0 ? (
+        <div className="empty-state">
+          <h3>No users found</h3>
+          <p>Try adjusting the search or school filter.</p>
+        </div>
+      ) : (
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>School</th>
+                <th>Role</th>
+                <th>Email</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row) => (
+                <tr key={row.key}>
+                  <td><strong>{row.name}</strong></td>
+                  <td><a href={`/${row.schoolId}/admin`} className="users-panel-school-link">{row.schoolName}</a></td>
+                  <td>{row.role}</td>
+                  <td>{row.email}</td>
+                  <td className="table-actions-cell">
+                    {row.simulateAdminUrl ? (
+                      <button className="secondary-action" type="button" onClick={() => openInNewTab(row.simulateAdminUrl!)}>
+                        Admin
+                      </button>
+                    ) : null}
+                    {row.simulateWorkUrl ? (
+                      <button className="secondary-action" type="button" onClick={() => openInNewTab(row.simulateWorkUrl!)}>
+                        School work
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </EditorPanel>
   );
 }
 
@@ -2640,7 +2799,9 @@ function SupportTicketsPanel({
                   onClick={() => setOpenTicketKey(isOpen ? null : draftKey)}
                   aria-expanded={isOpen}
                 >
-                  <span className={`support-ticket-status-dot support-ticket-status-dot--${ticket.status}`} />
+                  {ticket.status === "resolved"
+                    ? <Check size={14} className="support-ticket-resolved-check" />
+                    : <span className={`support-ticket-status-dot support-ticket-status-dot--${ticket.status}`} />}
                   <span className="support-ticket-subject">{ticket.subject}</span>
                   <span className="support-ticket-school">{school.name}</span>
                   <span className="support-ticket-status-label">{statusLabel(ticket.status)}</span>
@@ -2664,7 +2825,15 @@ function SupportTicketsPanel({
                       </label>
                     </div>
                     <p className="support-ticket-message">{ticket.message}</p>
-                    {ticket.response ? <p className="support-ticket-response"><strong>Previous response:</strong> {ticket.response}</p> : null}
+                    {ticket.response ? (
+                      <div className="support-ticket-response">
+                        <div className="support-ticket-response-meta">
+                          <strong>{ticket.respondedBy ?? "Support"}</strong>
+                          {ticket.respondedAt ? <span>{formatDateTime(ticket.respondedAt)}</span> : null}
+                        </div>
+                        <p>{ticket.response}</p>
+                      </div>
+                    ) : null}
                     <TextArea
                       label="Response note"
                       value={responseDraft}
@@ -3251,6 +3420,7 @@ function SchoolBillingPanel({
   );
 }
 
+
 function GlobalAboutEditor({
   config,
   onChange,
@@ -3599,62 +3769,6 @@ function GlobalSchoolWorkEditor({
   );
 }
 
-function ReadOnlyGlobalAbout({
-  config,
-  schoolPages,
-  onLocalPageChange,
-}: {
-  config: GlobalAboutConfig;
-  schoolPages: AboutPage[];
-  onLocalPageChange: (page: AboutPage) => void;
-}) {
-  return (
-    <section className="readonly-global-about">
-      <div>
-        <h3>Global categories and pages</h3>
-        <p>Global categories and pages are managed by superadmin. You can add school-specific content to each global page.</p>
-      </div>
-      <div className="readonly-global-about-grid">
-        {config.categories.map((category) => {
-          const pages = config.pages.filter((page) => page.categoryId === category.id);
-          return (
-            <article className="readonly-global-about-card" key={category.id}>
-              <h4>{category.title}</h4>
-              {pages.length === 0 ? (
-                <p>No global pages in this category.</p>
-              ) : (
-                <ul>
-                  {pages.map((page) => (
-                    <li key={page.id}>
-                      <span>{page.title}</span>
-                      <small>/{page.slug}</small>
-                      <RichTextEditor
-                        label={page.kind === "staffDirectory" ? "Local description above staff" : "Local content for this page"}
-                        value={schoolPages.find((item) => item.slug === page.slug)?.body ?? ""}
-                        onChange={(body) => {
-                          const existingPage = schoolPages.find((item) => item.slug === page.slug);
-                          onLocalPageChange({
-                            id: existingPage?.id ?? `local-global-page-${page.slug}`,
-                            categoryId: page.categoryId,
-                            title: page.title,
-                            slug: page.slug,
-                            headerImage: existingPage?.headerImage ?? "",
-                            body,
-                          });
-                        }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function SchoolEditor({
   school,
   globalAbout,
@@ -3666,6 +3780,7 @@ function SchoolEditor({
   activeSection,
   currentUserEmail,
   canAccessAllSubjectClasses,
+  isSuperAdmin,
   onSimulateStaff,
   onSimulateStudent,
   onBack,
@@ -3681,6 +3796,7 @@ function SchoolEditor({
   activeSection: EditorSection | null;
   currentUserEmail?: string | null;
   canAccessAllSubjectClasses?: boolean;
+  isSuperAdmin?: boolean;
   onSimulateStaff?: (staffMember: StaffMember) => void;
   onSimulateStudent?: (student: Student) => void;
   onBack: () => void;
@@ -4237,11 +4353,6 @@ function SchoolEditor({
   const globalCategories = globalAbout?.categories ?? [];
   const globalPageSlugs = new Set(globalAbout?.pages.map((page) => page.slug) ?? []);
   const editableAboutPages = aboutPages.filter((page) => !globalPageSlugs.has(page.slug));
-  const editableAboutCategoryOptions = [
-    ...globalCategories.map((category) => ({ value: category.id, label: `${category.title} (global)` })),
-    ...aboutCategories.map((category) => ({ value: category.id, label: category.title })),
-  ];
-  const defaultAboutCategoryId = aboutCategories[0]?.id ?? globalCategories[0]?.id ?? "";
   const activeCategoryInfo = editorCategories.find((category) => category.id === activeCategory) ?? editorCategories[0];
   const isSchoolWorkPage = activeSection === "schoolWork" || (activeCategory === "schoolWork" && !activeSection);
   const showSchoolWorkOverview = isSchoolWorkPage && !activeWorkSubjectClassId;
@@ -4259,7 +4370,7 @@ function SchoolEditor({
           <EditorSectionCards
             category={activeCategoryInfo}
             onSelect={onSectionChange}
-            extraContent={activeCategory === "schoolPage" ? (
+            extraContent={activeCategory === "website" ? (
               <div className="school-website-visibility-bar">
                 <div>
                   <strong>School website</strong>
@@ -4376,6 +4487,15 @@ function SchoolEditor({
               setField("payments", nextPayments);
             }}
           />
+        ) : null}
+
+        {activeSection === "timetable" ? (
+          <EditorPanel title="Timetable">
+            <TimetablePage
+              school={school}
+              onChange={(timetable) => setField("timetable", timetable)}
+            />
+          </EditorPanel>
         ) : null}
 
         {activeSection === "loginSettings" ? (
@@ -4666,13 +4786,11 @@ function SchoolEditor({
                 setStaffModalIndex(index);
               }}
               onSimulate={onSimulateStaff}
-              onRemove={(index) => {
-                const nextStaff = school.staff.filter((_, currentIndex) => currentIndex !== index);
-                updateSchool({
-                  ...school,
-                  adminEmails: getStaffAdminEmails(nextStaff),
-                  staff: nextStaff,
-                });
+              onRecover={(index) => {
+                const nextStaff = school.staff.map((member, i) =>
+                  i === index ? { ...member, deletedAt: undefined, accountDisabled: false } : member
+                ).filter((member) => !isStaffPermanentlyRemoved(member));
+                updateSchool({ ...school, adminEmails: getStaffAdminEmails(nextStaff), staff: nextStaff });
               }}
             />
             {staffModalIndex !== undefined ? (
@@ -4695,6 +4813,19 @@ function SchoolEditor({
                   });
                   setStaffModalIndex(undefined);
                 }}
+                onRemove={staffModalIndex !== null ? () => {
+                  const nextStaff = school.staff
+                    .map((member, i) => i === staffModalIndex
+                      ? { ...member, deletedAt: new Date().toISOString(), accountDisabled: true, visibleOnHomePage: false, visibleOnStaffPage: false, canAccessAdminPage: false }
+                      : member)
+                    .filter((member) => !isStaffPermanentlyRemoved(member));
+                  updateSchool({
+                    ...school,
+                    adminEmails: getStaffAdminEmails(nextStaff),
+                    staff: nextStaff,
+                  });
+                  setStaffModalIndex(undefined);
+                } : undefined}
               >
                 {renderStaffFields(draftStaff, setDraftStaff)}
               </RegistrationModal>
@@ -4704,6 +4835,25 @@ function SchoolEditor({
 
         {activeSection === "access" ? (
           <EditorPanel title="Access">
+            <section className="sub-editor-panel">
+              <h3>Platform admin</h3>
+              <p className="editor-helper-text">The platform admin is the only staff member with access to the Settings page. Leave unset to allow all school admins to access Settings.</p>
+              {(() => {
+                const adminStaff = school.staff.filter((m) => m.canAccessAdminPage ?? hasStaffCategory(m, "Administration")).filter((m) => m.email);
+                const options = [
+                  { value: "", label: "No restriction — all admins" },
+                  ...adminStaff.map((m) => ({ value: m.email!, label: `${m.name} (${m.email})` })),
+                ];
+                return (
+                  <SelectInput
+                    label="Platform admin"
+                    value={school.platformAdminEmail ?? ""}
+                    options={options}
+                    onChange={(value) => setField("platformAdminEmail", value || undefined)}
+                  />
+                );
+              })()}
+            </section>
             <AccessOverview
               school={school}
               classes={classes}
@@ -4711,6 +4861,15 @@ function SchoolEditor({
               students={students}
               subjectClasses={subjectClasses}
               subjects={subjects}
+              isPlatformAdmin={Boolean(
+                isSuperAdmin || (
+                  canAccessAllSubjectClasses && (
+                    !school.platformAdminEmail ||
+                    school.platformAdminEmail.toLowerCase() === currentUserEmail?.toLowerCase()
+                  )
+                )
+              )}
+              onUpdateStaff={(updatedStaff) => setField("staff", updatedStaff)}
             />
           </EditorPanel>
         ) : null}
@@ -5061,14 +5220,16 @@ function EditorMenu({
   activeCategory,
   activeSection,
   onChange,
+  hiddenCategories = [],
 }: {
   activeCategory: EditorCategory;
   activeSection: EditorSection | null;
   onChange: (category: EditorCategory) => void;
+  hiddenCategories?: EditorCategory[];
 }) {
   return (
     <nav className="editor-menu" aria-label="School admin categories">
-      {editorCategories.map((category) => (
+      {editorCategories.filter((category) => !hiddenCategories.includes(category.id)).map((category) => (
         <button
           className={activeCategory === category.id ? "active-editor-section" : ""}
           key={category.id}
@@ -5092,6 +5253,18 @@ function EditorSectionCards({
   onSelect: (section: EditorSection) => void;
   extraContent?: React.ReactNode;
 }) {
+  const renderSectionCards = (sections: EditorSection[]) => (
+    <div className="editor-section-card-grid">
+      {sections.map((section) => (
+        <button className="editor-section-card" key={section} type="button" onClick={() => onSelect(section)}>
+          <AdminCardTitle icon={getEditorSectionIcon(section)} title={getEditorSectionLabel(section)} />
+          {getEditorSectionExample(section) ? <small>{getEditorSectionExample(section)}</small> : null}
+          <span>{getEditorSectionDescription(section)}</span>
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <section className="editor-section-picker">
       <div>
@@ -5100,15 +5273,16 @@ function EditorSectionCards({
         <p>{category.description}</p>
       </div>
       {extraContent}
-      <div className="editor-section-card-grid">
-        {category.sections.map((section) => (
-          <button className="editor-section-card" key={section} type="button" onClick={() => onSelect(section)}>
-            <AdminCardTitle icon={getEditorSectionIcon(section)} title={getEditorSectionLabel(section)} />
-            {getEditorSectionExample(section) ? <small>{getEditorSectionExample(section)}</small> : null}
-            <span>{getEditorSectionDescription(section)}</span>
-          </button>
-        ))}
-      </div>
+      {category.groups ? (
+        category.groups.map((group) => (
+          <div key={group.label} className="editor-section-group">
+            <h3 className="editor-section-group-label">{group.label}</h3>
+            {renderSectionCards(group.sections)}
+          </div>
+        ))
+      ) : (
+        renderSectionCards(category.sections)
+      )}
     </section>
   );
 }
@@ -5143,6 +5317,7 @@ function getEditorSectionIcon(section: EditorSection): IconDefinition {
     schoolWork: faFolderOpen,
     loginSettings: faGaugeHigh,
     billing: faScaleBalanced,
+    timetable: faCalendarDays,
   };
   return icons[section];
 }
@@ -5158,12 +5333,12 @@ function getEditorSectionExample(section: EditorSection) {
 }
 
 function getEditorCategoryForSection(section: EditorSection) {
-  return editorCategories.find((category) => category.sections.includes(section))?.id ?? "schoolPage";
+  return editorCategories.find((category) => category.sections.includes(section))?.id ?? "website";
 }
 
 function getEditorStateFromHash(): { category: EditorCategory; section: EditorSection | null } {
   const [categoryValue, sectionValue] = window.location.hash.replace(/^#/, "").split("/");
-  const category = editorCategories.some((item) => item.id === categoryValue) ? categoryValue as EditorCategory : "schoolPage";
+  const category = editorCategories.some((item) => item.id === categoryValue) ? categoryValue as EditorCategory : "website";
   const section = editorSections.some((item) => item.id === sectionValue) ? sectionValue as EditorSection : null;
 
   if (section && getEditorCategoryForSection(section) !== category) {
@@ -5188,7 +5363,7 @@ function getEditorSectionDescription(section: EditorSection) {
     news: "School news articles and announcements.",
     calendar: "Important school dates and events.",
     staff: "Staff profiles, administrator access, visibility, and contact details.",
-    access: "Overview of users, roles, pages, and SchoolWork access.",
+    access: "Overview of users, roles, pages, and EduLink LMS access.",
     grades: "Register grade levels and school years.",
     classes: "Main class groups and class teachers.",
     subjectClasses: "Subject class groups with teachers and students.",
@@ -5197,6 +5372,7 @@ function getEditorSectionDescription(section: EditorSection) {
     loginSettings: "Choose username/password and email link sign-in options.",
     students: "Student records, guardians, and class assignments.",
     billing: "Subscription plan, invoices, and payment history.",
+    timetable: "Build and manage the school timetable.",
   };
   return descriptions[section];
 }
@@ -5646,79 +5822,139 @@ function StaffTable({
   staff,
   onSimulate,
   onEdit,
-  onRemove,
+  onRecover,
 }: {
   staff: StaffMember[];
   onSimulate?: (member: StaffMember) => void;
   onEdit: (member: StaffMember, index: number) => void;
-  onRemove: (index: number) => void;
+  onRecover: (index: number) => void;
 }) {
-  if (staff.length === 0) {
-    return (
-      <div className="empty-editor-state">
-        <h3>No staff members yet</h3>
-        <p>Add staff members to publish profiles and assign teachers.</p>
-      </div>
-    );
-  }
+  const [showVisibility, setShowVisibility] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+
+  const activeStaff = staff.filter((m) => !isStaffDeleted(m));
+  const deletedStaff = staff.map((m, i) => ({ member: m, index: i })).filter(({ member }) => isStaffDeleted(member));
 
   return (
-    <div className="data-table-wrap">
-      <table className="data-table staff-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Category</th>
-            <th>Description</th>
-            <th>Contact</th>
-            <th>Visibility</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {staff.map((member, index) => (
-            <tr key={`${member.name}-${index}`}>
-              <td>
-                <strong>{member.name}</strong>
-                {member.photoUrl ? <span>Photo uploaded</span> : <span>No photo</span>}
-              </td>
-              <td>
-                <span>{getStaffCategories(member).join(", ")}</span>
-                {staffCanAccessAdminPage(member) ? <span>Admin page access</span> : null}
-                {isStaffAccountDisabled(member) ? <span>Account disabled</span> : null}
-              </td>
-              <td>{member.role || "No description"}</td>
-              <td>
-                {member.phone ? <span>{member.phone}</span> : null}
-                {member.email ? <span>{member.email}</span> : null}
-                {!member.phone && !member.email ? "No contact" : null}
-              </td>
-              <td>
-                <span>{member.visibleOnHomePage === false ? "Hidden from home" : "Home page"}</span>
-                <span>{member.visibleOnStaffPage === false ? "Hidden from staff page" : "Staff page"}</span>
-              </td>
-              <td>
-                <div className="table-actions">
-                  {onSimulate ? (
-                    <button className="secondary-action" type="button" onClick={() => onSimulate(member)} disabled={!member.email || isStaffAccountDisabled(member)}>
-                      Simulate
-                    </button>
-                  ) : null}
-                  <button className="secondary-action" type="button" onClick={() => onEdit(member, index)}>
-                    Edit
-                  </button>
-                  <button className="remove-button" type="button" onClick={() => onRemove(index)}>
-                    Remove
-                  </button>
+    <div className="staff-table-panel">
+      {activeStaff.length === 0 ? (
+        <div className="empty-editor-state">
+          <h3>No staff members yet</h3>
+          <p>Add staff members to publish profiles and assign teachers.</p>
+        </div>
+      ) : (
+        <>
+          <div className="staff-table-show-row">
+            <span className="staff-table-show-label">Show:</span>
+            <button
+              type="button"
+              className={`staff-table-show-btn${showVisibility ? " active" : ""}`}
+              onClick={() => setShowVisibility((v) => !v)}
+            >
+              Visibility
+            </button>
+            <button
+              type="button"
+              className={`staff-table-show-btn${showCategories ? " active" : ""}`}
+              onClick={() => setShowCategories((v) => !v)}
+            >
+              Categories
+            </button>
+          </div>
+          <div className="data-table-wrap">
+            <table className="data-table staff-table">
+              <thead>
+                <tr>
+                  <th className="staff-table-photo-col"></th>
+                  <th>Name</th>
+                  {showCategories ? <th>Category</th> : null}
+                  <th>Description</th>
+                  <th>Contact</th>
+                  {showVisibility ? <th>Visibility</th> : null}
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staff.map((member, index) => isStaffDeleted(member) ? null : (
+                  <tr key={`${member.name}-${index}`}>
+                    <td className="staff-table-photo-col">
+                      <div className="staff-avatar staff-table-avatar">
+                        {member.photoUrl ? <img src={member.photoUrl} alt={member.name} /> : <UserRound size={20} />}
+                      </div>
+                    </td>
+                    <td>
+                      <strong>{member.name}</strong>
+                    </td>
+                    {showCategories ? (
+                      <td>
+                        <span>{getStaffCategories(member).join(", ") || "—"}</span>
+                        {staffCanAccessAdminPage(member) ? <span>Admin page access</span> : null}
+                        {isStaffAccountDisabled(member) ? <span>Account disabled</span> : null}
+                      </td>
+                    ) : null}
+                    <td>{member.role || "—"}</td>
+                    <td>
+                      {member.phone ? <span>{member.phone}</span> : null}
+                      {member.email ? <span>{member.email}</span> : null}
+                      {!member.phone && !member.email ? "—" : null}
+                    </td>
+                    {showVisibility ? (
+                      <td>
+                        <span>{member.visibleOnHomePage === false ? "Hidden from home" : "Home page"}</span>
+                        <span>{member.visibleOnStaffPage === false ? "Hidden from staff page" : "Staff page"}</span>
+                      </td>
+                    ) : null}
+                    <td>
+                      <div className="table-actions">
+                        {onSimulate ? (
+                          <button className="secondary-action" type="button" onClick={() => onSimulate(member)} disabled={!member.email || isStaffAccountDisabled(member)}>
+                            Simulate
+                          </button>
+                        ) : null}
+                        <button className="secondary-action" type="button" onClick={() => onEdit(member, index)}>
+                          Edit
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {deletedStaff.length > 0 ? (
+        <div className="staff-deleted-section">
+          <p className="staff-deleted-heading">Recently removed</p>
+          {deletedStaff.map(({ member, index }) => {
+            const days = daysUntilPermanentRemoval(member);
+            return (
+              <div key={`deleted-${index}`} className="staff-deleted-row">
+                <div className="staff-avatar staff-table-avatar">
+                  {member.photoUrl ? <img src={member.photoUrl} alt={member.name} /> : <UserRound size={18} />}
                 </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                <div className="staff-deleted-info">
+                  <span className="staff-deleted-name">{member.name}</span>
+                  <span className="staff-deleted-meta">{member.role || "No description"} · Permanently removed in {days} {days === 1 ? "day" : "days"}</span>
+                </div>
+                <button className="secondary-action staff-recover-btn" type="button" onClick={() => onRecover(index)}>
+                  Recover
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
+
+const ACCESS_ADMIN_CATEGORIES: Array<{ id: string; label: string }> = [
+  { id: "website", label: "Website" },
+  { id: "people", label: "People & Academics" },
+  { id: "schoolWork", label: "EduLink LMS" },
+  { id: "administrative", label: "Administrative" },
+];
 
 function AccessOverview({
   school,
@@ -5727,6 +5963,8 @@ function AccessOverview({
   students,
   subjectClasses,
   subjects,
+  isPlatformAdmin,
+  onUpdateStaff,
 }: {
   school: School;
   classes: ClassGroup[];
@@ -5734,64 +5972,101 @@ function AccessOverview({
   students: Student[];
   subjectClasses: SubjectClass[];
   subjects: Subject[];
+  isPlatformAdmin?: boolean;
+  onUpdateStaff?: (updatedStaff: StaffMember[]) => void;
 }) {
+  const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "teacher" | "staff" | "student">("all");
+  const [adminPagesTarget, setAdminPagesTarget] = useState<StaffMember | null>(null);
+
   const adminEmails = getSchoolAdminEmails(school);
   const allowStudentMessaging = Boolean(school.schoolWorkSettings?.allowStudentMessaging);
-  const getSubjectClassLabel = (subjectClass: SubjectClass) => {
-    const subject = subjects.find((item) => item.id === subjectClass.subjectId);
-    return subject?.name ?? subjectClass.name;
+
+  const updateMember = (target: StaffMember, patch: Partial<StaffMember>) => {
+    if (!onUpdateStaff) return;
+    const key = target.email?.toLowerCase() || target.name;
+    onUpdateStaff(staff.map((m) => ((m.email?.toLowerCase() || m.name) === key ? { ...m, ...patch } : m)));
   };
-  const getClassLabel = (classGroup: ClassGroup) => classGroup.grade ? `${classGroup.name} - Grade ${classGroup.grade}` : classGroup.name;
-  const formatList = (items: string[], emptyLabel: string) => items.length ? items.join(", ") : emptyLabel;
-  const staffRows = staff.map((member) => {
+
+  type AccessRow = {
+    id: string;
+    member?: StaffMember;
+    name: string;
+    filterRole: "admin" | "teacher" | "staff" | "student";
+    roleLabel: string;
+    signIn: string;
+    isAdmin: boolean;
+    isTeacher: boolean;
+    isStudent: boolean;
+    accountDisabled: boolean;
+    lmsLabel: string;
+    lmsEditable: boolean;
+  };
+
+  const staffRows: AccessRow[] = staff.filter((m) => !isStaffDeleted(m)).map((member) => {
     const categories = getStaffCategories(member);
     const isTeacher = categories.includes("Teacher");
-    const isAdmin = Boolean(member.email && adminEmails.map((email) => email.toLowerCase()).includes(member.email.toLowerCase()));
+    const isAdmin = Boolean(member.email && adminEmails.map((e) => e.toLowerCase()).includes(member.email!.toLowerCase()));
     const accountDisabled = isStaffAccountDisabled(member);
-    const taughtSubjectClasses = subjectClasses.filter((subjectClass) => subjectClass.teacherName === member.name).map(getSubjectClassLabel);
-    const contactTeacherClasses = classes.filter((classGroup) => classGroup.teacher === member.name).map(getClassLabel);
-    const access = [
-      isAdmin ? "Admin dashboard" : "",
-      isAdmin ? "All SchoolWork subject classes" : isTeacher ? `Teacher SchoolWork: ${formatList(taughtSubjectClasses, "no assigned subject classes")}` : "SchoolWork viewer access",
-      contactTeacherClasses.length ? `Contact teacher: ${contactTeacherClasses.join(", ")}` : "",
-      "School chat",
-      "Public website pages",
-    ].filter(Boolean);
+    const taughtSubjectClasses = subjectClasses.filter((sc) => sc.teacherName === member.name);
+    let lmsLabel: string;
+    if (isTeacher) {
+      lmsLabel = member.lmsAccess === "none" ? "No access" : `Teacher — ${taughtSubjectClasses.length} class${taughtSubjectClasses.length === 1 ? "" : "es"}`;
+    } else {
+      const access = member.lmsAccess ?? "view";
+      lmsLabel = access === "none" ? "No access" : "View all";
+    }
+    const filterRole: "admin" | "teacher" | "staff" = isAdmin ? "admin" : isTeacher ? "teacher" : "staff";
     return {
       id: `staff-${member.email || member.name}`,
+      member,
       name: member.name,
-      role: isAdmin ? "School admin" : categories.join(", "),
-      signIn: accountDisabled ? `${member.email || "No login email"} (disabled)` : member.email || "No login email",
-      access: accountDisabled ? ["Account disabled"] : access,
+      filterRole,
+      roleLabel: isAdmin ? "School admin" : categories.join(", "),
+      signIn: accountDisabled ? `${member.email || "—"} (disabled)` : member.email || "—",
+      isAdmin,
+      isTeacher,
+      isStudent: false,
+      accountDisabled,
+      lmsLabel,
+      lmsEditable: true,
     };
   });
-  const studentRows = students.map((student) => {
-    const studentSubjectClasses = subjectClasses.filter((subjectClass) => subjectClass.studentIds.includes(student.id)).map(getSubjectClassLabel);
-    const classGroup = classes.find((item) => item.id === student.classId);
-    return {
-      id: `student-${student.id}`,
-      name: `${student.firstName} ${student.lastName}`,
-      role: "Student",
-      signIn: student.accountDisabled ? `${student.email || "No login email"} (disabled)` : student.email || "No login email",
-      access: student.accountDisabled ? ["Account disabled"] : [
-        `SchoolWork: ${formatList(studentSubjectClasses, "no subject classes")}`,
-        "Grades and feedback",
-        `School chat with teachers/admins${allowStudentMessaging ? " and students" : ""}`,
-        classGroup ? `Main class: ${classGroup.name}` : "No main class",
-      ],
-    };
-  });
-  const staffAdminEmails = new Set(staff.map((member) => member.email?.toLowerCase()).filter(Boolean));
-  const standaloneAdminRows = adminEmails
+
+  const studentRows: AccessRow[] = students.map((student) => ({
+    id: `student-${student.id}`,
+    name: `${student.firstName} ${student.lastName}`,
+    filterRole: "student",
+    roleLabel: "Student",
+    signIn: student.accountDisabled ? `${student.email || "—"} (disabled)` : student.email || "—",
+    isAdmin: false,
+    isTeacher: false,
+    isStudent: true,
+    accountDisabled: Boolean(student.accountDisabled),
+    lmsLabel: "Student LMS",
+    lmsEditable: false,
+  }));
+
+  const staffAdminEmails = new Set(staff.map((m) => m.email?.toLowerCase()).filter(Boolean));
+  const standaloneRows: AccessRow[] = adminEmails
     .filter((email) => !staffAdminEmails.has(email.toLowerCase()))
     .map((email) => ({
       id: `admin-${email}`,
       name: email,
-      role: "School admin",
+      filterRole: "admin",
+      roleLabel: "School admin",
       signIn: email,
-      access: ["Admin dashboard", "All SchoolWork subject classes", "School chat", "Public website pages"],
+      isAdmin: true,
+      isTeacher: false,
+      isStudent: false,
+      accountDisabled: false,
+      lmsLabel: "View all",
+      lmsEditable: false,
     }));
-  const rows = [...standaloneAdminRows, ...staffRows, ...studentRows];
+
+  const allRows = [...standaloneRows, ...staffRows, ...studentRows];
+  const filteredRows = roleFilter === "all" ? allRows : allRows.filter((r) => r.filterRole === roleFilter);
+
+  const adminPagesTargetMember = adminPagesTarget;
 
   return (
     <div className="access-overview">
@@ -5802,17 +6077,29 @@ function AccessOverview({
         </article>
         <article className="access-summary-card">
           <AdminCardTitle icon={faGaugeHigh} title="Admin dashboard" />
-          <span>Staff with admin page access can edit school content, people, academics, settings, and all SchoolWork areas.</span>
+          <span>Staff with admin page access can use the admin dashboard. Platform admin can restrict which sections each user can access.</span>
         </article>
         <article className="access-summary-card">
-          <AdminCardTitle icon={faBookOpen} title="SchoolWork" />
-          <span>Admins see all subject classes. Teachers see assigned subject classes. Students see subject classes they belong to.</span>
+          <AdminCardTitle icon={faBookOpen} title="EduLink LMS" />
+          <span>Teachers see assigned subject classes. Non-teacher admins can have view access to all or no LMS access. Students see their classes.</span>
         </article>
         <article className="access-summary-card">
           <AdminCardTitle icon={faMessage} title="School chat" />
           <span>Students can contact teachers and admins{allowStudentMessaging ? ", and student-to-student messaging is enabled." : ". Student-to-student messaging is disabled."}</span>
         </article>
       </section>
+      <div className="access-table-controls">
+        {(["all", "admin", "teacher", "staff", "student"] as const).map((role) => (
+          <button
+            key={role}
+            type="button"
+            className={`access-role-filter-btn${roleFilter === role ? " active" : ""}`}
+            onClick={() => setRoleFilter(role)}
+          >
+            {role === "all" ? "All" : role.charAt(0).toUpperCase() + role.slice(1)}
+          </button>
+        ))}
+      </div>
       <div className="data-table-wrap">
         <table className="data-table access-table">
           <thead>
@@ -5820,21 +6107,111 @@ function AccessOverview({
               <th>User</th>
               <th>Role</th>
               <th>Sign-in</th>
-              <th>Access</th>
+              <th>LMS access</th>
+              {isPlatformAdmin ? <th>Admin pages</th> : null}
+              <th>Chat</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td><strong>{row.name}</strong></td>
-                <td>{row.role}</td>
-                <td>{row.signIn}</td>
-                <td>{row.access.join(" | ")}</td>
-              </tr>
-            ))}
+            {filteredRows.map((row) => {
+              const chatEnabled = row.member ? (row.member.chatEnabled ?? true) : true;
+              const allowedCats = row.member?.allowedAdminCategories;
+              const adminPagesLabel = !allowedCats?.length
+                ? "All pages"
+                : `${allowedCats.length} page${allowedCats.length === 1 ? "" : "s"}`;
+              return (
+                <tr key={row.id} className={row.accountDisabled ? "access-row-disabled" : ""}>
+                  <td><strong>{row.name}</strong></td>
+                  <td>{row.roleLabel}</td>
+                  <td className="access-signin-cell">{row.signIn}</td>
+                  <td>
+                    {isPlatformAdmin && row.lmsEditable && row.member ? (
+                      <select
+                        className="access-inline-select"
+                        value={row.member.lmsAccess ?? (row.isTeacher ? "teacher" : "view")}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateMember(row.member!, { lmsAccess: val === "teacher" ? undefined : (val as "view" | "none") });
+                        }}
+                      >
+                        {row.isTeacher ? <option value="teacher">Teacher access</option> : <option value="view">View all</option>}
+                        <option value="none">No access</option>
+                      </select>
+                    ) : (
+                      <span className="access-lms-label">{row.lmsLabel}</span>
+                    )}
+                  </td>
+                  {isPlatformAdmin ? (
+                    <td>
+                      {row.isAdmin && row.member && row.member.email ? (
+                        <button
+                          type="button"
+                          className="access-admin-pages-btn"
+                          onClick={() => setAdminPagesTarget(row.member!)}
+                        >
+                          {adminPagesLabel}
+                        </button>
+                      ) : row.isAdmin && row.member && !row.member.email ? (
+                        <span className="access-needs-login">Needs login email</span>
+                      ) : (
+                        <span className="access-na">—</span>
+                      )}
+                    </td>
+                  ) : null}
+                  <td>
+                    {isPlatformAdmin && row.member ? (
+                      <CheckboxInput
+                        label=""
+                        checked={chatEnabled}
+                        onChange={(checked) => updateMember(row.member!, { chatEnabled: checked })}
+                      />
+                    ) : (
+                      <span className="access-lms-label">{chatEnabled ? "Enabled" : "Disabled"}</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+      {adminPagesTargetMember ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setAdminPagesTarget(null)}>
+          <section className="staff-modal" role="dialog" aria-modal="true" aria-label="Admin pages access" onClick={(e) => e.stopPropagation()}>
+            <div className="staff-modal-header">
+              <h2>Admin pages — {adminPagesTargetMember.name}</h2>
+              <button type="button" onClick={() => setAdminPagesTarget(null)}>×</button>
+            </div>
+            <div className="staff-modal-body">
+              <p className="editor-helper-text">Choose which admin sections this user can access. Leave all checked for full access.</p>
+              <div className="admin-pages-checklist">
+                {ACCESS_ADMIN_CATEGORIES.map((cat) => {
+                  const allowed = adminPagesTargetMember.allowedAdminCategories;
+                  const isChecked = !allowed?.length || allowed.includes(cat.id);
+                  return (
+                    <label key={cat.id} className="admin-pages-check-row">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const current = adminPagesTargetMember.allowedAdminCategories ?? ACCESS_ADMIN_CATEGORIES.map((c) => c.id);
+                          const next = e.target.checked
+                            ? mergeUnique([...current, cat.id])
+                            : current.filter((id) => id !== cat.id);
+                          const patch = next.length === ACCESS_ADMIN_CATEGORIES.length ? { allowedAdminCategories: undefined } : { allowedAdminCategories: next };
+                          updateMember(adminPagesTargetMember, patch);
+                          setAdminPagesTarget({ ...adminPagesTargetMember, ...patch });
+                        }}
+                      />
+                      <span>{cat.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -6152,6 +6529,7 @@ function SchoolWorkOverview({
 }) {
   const [activeOverviewMenu, setActiveOverviewMenu] = useState<"subjects" | "contactTeacher" | "admin">("subjects");
   const [contactTeacherClassId, setContactTeacherClassId] = useState<string | null>(() => localStorage.getItem("edulink-contact-class"));
+  const [scalePreviewId, setScalePreviewId] = useState<string | null>(null);
 
   const selectContactClass = (id: string | null) => {
     setContactTeacherClassId(id);
@@ -6204,34 +6582,30 @@ function SchoolWorkOverview({
       knownGlobalAssessmentScaleIds: globalAssessmentScales.map((s) => s.id),
       customAssessmentScales: [],
     };
-    const activeGlobalScales = globalAssessmentScales.filter((s) => effectiveSettings.enabledGlobalAssessmentScaleIds.includes(s.id));
-    const allActiveScales = [...activeGlobalScales, ...effectiveSettings.customAssessmentScales];
+    const allScalesForPreview = [...globalAssessmentScales, ...effectiveSettings.customAssessmentScales];
+    const previewScale = scalePreviewId ? allScalesForPreview.find((s) => s.id === scalePreviewId) : null;
     return (
       <div className="school-work-overview">
         {overviewMenu}
-        {allActiveScales.length > 0 ? (
-          <div className="admin-scale-card-grid">
-            {allActiveScales.map((scale) => (
-              <div key={scale.id} className="admin-scale-card">
-                <div className="admin-scale-card-header">
-                  <strong>{scale.name}</strong>
-                  {effectiveSettings.customAssessmentScales.some((s) => s.id === scale.id) ? (
-                    <span className="admin-scale-card-tag">Custom</span>
-                  ) : (
-                    <span className="admin-scale-card-tag admin-scale-card-tag--global">Global</span>
-                  )}
-                </div>
-                <div className="admin-scale-levels">
-                  {scale.levels.map((level) => (
-                    <div key={level.id} className="admin-scale-level-row">
-                      <span className="admin-scale-level-value">{level.value}</span>
-                      <span className="admin-scale-level-pct">≥ {level.minPercentage}%</span>
-                      {level.description ? <span className="admin-scale-level-desc">{level.description}</span> : null}
+        {previewScale ? (
+          <div className="modal-backdrop" role="presentation" onClick={() => setScalePreviewId(null)}>
+            <section className="staff-modal" role="dialog" aria-modal="true" aria-labelledby="scale-preview-title" onClick={(e) => e.stopPropagation()}>
+              <div className="staff-modal-header">
+                <h2 id="scale-preview-title">{previewScale.name}</h2>
+                <button className="staff-modal-close" type="button" aria-label="Close" onClick={() => setScalePreviewId(null)}>×</button>
+              </div>
+              <div className="staff-modal-body">
+                <div className="scale-preview-levels">
+                  {previewScale.levels.map((level) => (
+                    <div key={level.id} className="scale-preview-level-row">
+                      <span className="scale-preview-level-value">{level.value}</span>
+                      <span className="scale-preview-level-pct">≥ {level.minPercentage}%</span>
+                      {level.description ? <span className="scale-preview-level-desc">{level.description}</span> : null}
                     </div>
                   ))}
                 </div>
               </div>
-            ))}
+            </section>
           </div>
         ) : null}
         <div className="nested-editor-grid">
@@ -6239,10 +6613,17 @@ function SchoolWorkOverview({
             <h3>Assessment scales</h3>
             <div className="assessment-scale-toggle-list">
               {globalAssessmentScales.map((scale) => (
-                <label className="assessment-scale-toggle" key={scale.id}>
-                  <div>
+                <div className="assessment-scale-toggle" key={scale.id}>
+                  <div className="assessment-scale-toggle-info">
                     <strong>{scale.name}</strong>
-                    <small>{formatAssessmentScaleSummary(scale)}</small>
+                    <small>{scale.levels.length} level{scale.levels.length === 1 ? "" : "s"}</small>
+                    <button
+                      className="scale-view-levels-btn"
+                      type="button"
+                      onClick={() => setScalePreviewId(scale.id)}
+                    >
+                      View levels
+                    </button>
                   </div>
                   <CheckboxInput
                     label="Enabled"
@@ -6255,7 +6636,7 @@ function SchoolWorkOverview({
                         : effectiveSettings.enabledGlobalAssessmentScaleIds.filter((id) => id !== scale.id),
                     })}
                   />
-                </label>
+                </div>
               ))}
             </div>
           </section>
@@ -7126,7 +7507,14 @@ function AssessmentResourceDetail({
           <div className="assessment-card-heading">
             <div>
               <p className="eyebrow">{assessment.format}</p>
-              <h3>{assessment.title}</h3>
+              <div className="assessment-title-row">
+                <h3>{assessment.title}</h3>
+                {!isStudentSubmitMode ? (
+                  <button className="assessment-title-link" type="button" onClick={onEdit}>
+                    Open assessment
+                  </button>
+                ) : null}
+              </div>
               <div className="assessment-meta-list">
                 <p><FontAwesomeIcon icon={faCalendarDays} fixedWidth /><strong>{assessment.requiresTurnIn ? "Due date" : "Date"}:</strong> {formatAssessmentDate(assessment)}</p>
                 <p><FontAwesomeIcon icon={faClipboardCheck} fixedWidth /><strong>Turn-in required:</strong> {assessment.requiresTurnIn ? "Yes" : "No"}</p>
@@ -10165,12 +10553,29 @@ function isStaffAccountDisabled(member: StaffMember) {
   return Boolean(member.accountDisabled) && !staffCanAccessAdminPage(member);
 }
 
+function isStaffDeleted(member: StaffMember) {
+  return Boolean(member.deletedAt);
+}
+
+function isStaffPermanentlyRemoved(member: StaffMember) {
+  if (!member.deletedAt) return false;
+  const deletedMs = new Date(member.deletedAt).getTime();
+  return Date.now() - deletedMs > 7 * 24 * 60 * 60 * 1000;
+}
+
+function daysUntilPermanentRemoval(member: StaffMember) {
+  if (!member.deletedAt) return null;
+  const deletedMs = new Date(member.deletedAt).getTime();
+  const remainingMs = 7 * 24 * 60 * 60 * 1000 - (Date.now() - deletedMs);
+  return Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+}
+
 function getStaffEmail(member?: StaffMember) {
   return member?.email?.trim().toLowerCase() ?? "";
 }
 
 function getStaffAdminEmails(staff: StaffMember[]) {
-  return mergeUnique(staff.filter(staffCanAccessAdminPage).map(getStaffEmail).filter(Boolean));
+  return mergeUnique(staff.filter((m) => !isStaffDeleted(m) && staffCanAccessAdminPage(m)).map(getStaffEmail).filter(Boolean));
 }
 
 function getSchoolAdminEmails(school: School) {
@@ -10240,23 +10645,39 @@ function getSchoolWorkIdentity(school: School, userEmail: string | null, profile
     return null;
   }
 
+  const staffMember = school.staff.find((member) => member.email?.toLowerCase() === normalizedEmail);
+  if (staffMember && !isStaffAccountDisabled(staffMember)) {
+    const isTeacher = hasStaffCategory(staffMember, "Teacher");
+    const isAdmin = getSchoolAdminEmails(school).includes(normalizedEmail);
+    if (isTeacher) {
+      if (staffMember.lmsAccess === "none") return null;
+      return {
+        role: "teacher",
+        label: staffMember.name,
+        subjectClasses: subjectClasses.filter((subjectClass) => subjectClass.teacherName === staffMember.name),
+      };
+    }
+    if (isAdmin) {
+      const lmsAccess = staffMember.lmsAccess ?? "view";
+      if (lmsAccess === "none") return null;
+      return {
+        role: "viewer",
+        label: staffMember.name,
+        subjectClasses,
+      };
+    }
+    return {
+      role: "viewer",
+      label: staffMember.name,
+      subjectClasses,
+    };
+  }
+
   if (getSchoolAdminEmails(school).includes(normalizedEmail)) {
     return {
       role: "admin",
       label: "School admin",
       subjectClasses,
-    };
-  }
-
-  const staffMember = school.staff.find((member) => member.email?.toLowerCase() === normalizedEmail);
-  if (staffMember && !isStaffAccountDisabled(staffMember)) {
-    const isTeacher = hasStaffCategory(staffMember, "Teacher");
-    return {
-      role: isTeacher ? "teacher" : "viewer",
-      label: staffMember.name,
-      subjectClasses: isTeacher
-        ? subjectClasses.filter((subjectClass) => subjectClass.teacherName === staffMember.name)
-        : subjectClasses,
     };
   }
 
@@ -10465,11 +10886,11 @@ function slugifyGradeLevel(grade: string, year: string) {
 }
 
 function isVisibleOnHomePage(member: StaffMember) {
-  return member.visibleOnHomePage !== false;
+  return !isStaffDeleted(member) && member.visibleOnHomePage !== false;
 }
 
 function isVisibleOnStaffPage(member: StaffMember) {
-  return member.visibleOnStaffPage !== false;
+  return !isStaffDeleted(member) && member.visibleOnStaffPage !== false;
 }
 
 function buildAboutPageGroups(school: School, globalAbout: GlobalAboutConfig) {
@@ -10601,11 +11022,13 @@ function SchoolHeader({
   globalCategories?: AboutCategory[];
 }) {
   const [loadedCategories, setLoadedCategories] = useState<AboutCategory[]>(() => globalAboutCache?.categories ?? []);
+  const [navLoading, setNavLoading] = useState(!globalAboutCache && !globalCategories);
   useEffect(() => {
     if (!globalAboutCache) {
       void getGlobalAboutConfig().then((config) => {
         globalAboutCache = config;
         setLoadedCategories(config.categories);
+        setNavLoading(false);
       });
     }
   }, []);
@@ -10629,10 +11052,16 @@ function SchoolHeader({
         <a href={`/${school.id}`} className={currentPage === "home" ? "active" : ""}>Home</a>
         <a href={`/${school.id}/about`} className={currentPage === "about" ? "active" : ""}>About</a>
         <a href={`/${school.id}/for-students-and-guardians`} className={currentPage === "students" ? "active" : ""}>For students and guardians</a>
-        {allNavCategories.map((cat) => (
+        {navLoading ? (
+          <span className="school-nav-loading">
+            <span className="school-nav-loading-dot" />
+            <span className="school-nav-loading-dot" />
+            <span className="school-nav-loading-dot" />
+          </span>
+        ) : allNavCategories.map((cat) => (
           <a key={cat.id} href={getCategoryHref(cat)} className={currentPage === cat.id ? "active" : ""}>{cat.title}</a>
         ))}
-        <a href={`/${school.id}/schoolwork`} className="school-lms-login-button">LMS login</a>
+        <a href={`/${school.id}/lms`} className="school-lms-login-button">LMS login</a>
       </nav>}
     </header>
   );
@@ -10865,6 +11294,7 @@ function RegistrationModal({
   wide = false,
   onClose,
   onSubmit,
+  onRemove,
   children,
 }: {
   title: string;
@@ -10873,6 +11303,7 @@ function RegistrationModal({
   wide?: boolean;
   onClose: () => void;
   onSubmit: () => void;
+  onRemove?: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -10888,12 +11319,19 @@ function RegistrationModal({
           {children}
         </div>
         <div className="staff-modal-actions">
-          <button className="secondary-action" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="primary-action" type="button" onClick={onSubmit}>
-            {submitLabel}
-          </button>
+          {onRemove ? (
+            <button className="remove-button modal-remove-button" type="button" onClick={onRemove}>
+              Remove
+            </button>
+          ) : null}
+          <div className="staff-modal-actions-right">
+            <button className="secondary-action" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="primary-action" type="button" onClick={onSubmit}>
+              {submitLabel}
+            </button>
+          </div>
         </div>
       </section>
     </div>

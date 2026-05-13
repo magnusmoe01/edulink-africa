@@ -24,6 +24,10 @@ export type StaffMember = {
   photoUrl?: string;
   visibleOnHomePage?: boolean;
   visibleOnStaffPage?: boolean;
+  deletedAt?: string;
+  lmsAccess?: "view" | "none";
+  allowedAdminCategories?: string[];
+  chatEnabled?: boolean;
 };
 
 export type ClassGroup = {
@@ -323,6 +327,59 @@ export type SchoolPayment = {
   generatedAt: string;
 };
 
+export type TimetableBreak = {
+  id: string;
+  name: string;
+  afterSlot: number;
+  durationMinutes: number;
+};
+
+export type TimetableConfig = {
+  days: string[];
+  startTime: string;
+  sessionMinutes: number;
+  sessionsPerDay: number;
+  breaks: TimetableBreak[];
+};
+
+export type TimetablePeriodTarget = {
+  classId: string;
+  subjectId: string;
+  periodsPerWeek: number;
+};
+
+export type TimetableDefault = {
+  subjectId: string;
+  gradeLevelId?: string;
+  periodsPerWeek: number;
+};
+
+export type TimetableEntry = {
+  id: string;
+  classId: string;
+  subjectId: string;
+  day: string;
+  slot: number;
+};
+
+export type TimetableVersion = {
+  id: string;
+  name: string;
+  createdAt: string;
+  config: TimetableConfig;
+  periodTargets: TimetablePeriodTarget[];
+  entries: TimetableEntry[];
+};
+
+export type SchoolTimetable = {
+  config: TimetableConfig;
+  defaults?: TimetableDefault[];
+  periodTargets: TimetablePeriodTarget[];
+  entries: TimetableEntry[];
+  versions?: TimetableVersion[];
+  publishedVersionId?: string;
+};
+
 export type School = {
   id: string;
   name: string;
@@ -335,6 +392,7 @@ export type School = {
   phone: string;
   email: string;
   adminEmails: string[];
+  platformAdminEmail?: string;
   loginSettings?: LoginSettings;
   principal: string;
   showWebsite?: boolean;
@@ -358,6 +416,7 @@ export type School = {
   chatMessages?: SchoolChatMessage[];
   supportTickets?: SupportTicket[];
   payments?: SchoolPayment[];
+  timetable?: SchoolTimetable;
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
   updatedAt?: string;
