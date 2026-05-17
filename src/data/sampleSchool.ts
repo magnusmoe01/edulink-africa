@@ -128,24 +128,24 @@ export const sampleSchool: School = {
     {
       id: "learning",
       title: "Learning",
-      description: "How teaching, assessment, and learner support work at our school.",
     },
     {
       id: "families",
       title: "Families",
-      description: "Useful information for parents and guardians.",
     },
   ],
   aboutPages: [
     {
       id: "curriculum",
       categoryId: "learning",
+      slug: "curriculum",
       title: "Curriculum",
       body: "We follow the national curriculum and enrich lessons with reading, digital skills, arts, sport, and practical projects.",
     },
     {
       id: "school-day",
       categoryId: "families",
+      slug: "school-day",
       title: "School day",
       body: "The school day starts with morning registration, followed by classroom learning, breaks, lunch, enrichment, and afternoon dismissal.",
     },

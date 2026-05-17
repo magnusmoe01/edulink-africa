@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, deleteDoc } from "firebase/firestore";
 import { db, hasFirebaseConfig } from "./firebase";
 import { sampleSchool } from "../data/sampleSchool";
-import type { AdminProfile, AssessmentScale, GlobalAboutConfig, GlobalSchoolWorkConfig, School } from "../types";
+import type { AdminProfile, AssessmentScale, GlobalAboutConfig, GlobalSchoolWorkConfig, School, SubjectClass } from "../types";
 
 const COLLECTION = "schools";
 const GLOBAL_ABOUT_KEY = "edulink-global-about";
@@ -417,7 +417,7 @@ function normalizeSchool(school: School): School {
         baseClassId: classId,
         teacherName: subject.teacherName ?? "",
         studentIds: subject.studentIds ?? [],
-      }));
+      } as Partial<SubjectClass> & { id: string; name: string; subjectId: string; baseClassId: string; teacherName: string; studentIds: string[] }));
     })).map((subjectClass) => ({
       ...subjectClass,
       nameOverride: subjectClass.nameOverride ?? false,
@@ -541,7 +541,7 @@ function normalizeGlobalSchoolWorkConfig(config: GlobalSchoolWorkConfig): Global
 }
 
 function ensureRequiredAssessmentScaleLevels(levels: Array<{ id: string; value: string; minPercentage: number; description?: string }>) {
-  const requiredIds = new Set(REQUIRED_ASSESSMENT_SCALE_LEVELS.map((level) => level.id));
+  const requiredIds = new Set<string>(REQUIRED_ASSESSMENT_SCALE_LEVELS.map((level) => level.id));
   const customLevels = levels.filter((level) => !requiredIds.has(level.id));
   const requiredLevels = REQUIRED_ASSESSMENT_SCALE_LEVELS.map((requiredLevel) => {
     const existingLevel = levels.find((level) => level.id === requiredLevel.id);
