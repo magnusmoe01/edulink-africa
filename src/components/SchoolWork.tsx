@@ -27,6 +27,7 @@ import {
   faCalendarDays,
   faChartLine,
   faClipboardCheck,
+  faFolderOpen,
   faMessage,
   faRulerCombined,
   faScaleBalanced,
@@ -67,17 +68,23 @@ import {
   prepareImageUpload,
 } from "./ui";
 import { slugifySchoolName } from "../lib/schools";
+import { AttendancePage, AttendanceSummary } from "./AttendancePage";
+import { HomeworkPage } from "./HomeworkPage";
+import { ExamView } from "./ExamTimetablePage";
 import type {
   Assessment,
   AssessmentGrade,
   AssessmentScale,
+  AttendanceRecord,
   ClassGroup,
   CourseMaterial,
+  ExamTimetableEntry,
   Guardian,
   Remark,
   RemarkCategory,
   ResourceFolder,
   SchoolRemarkSettings,
+  SchoolTimetable,
   SchoolWorkSettings,
   Student,
   Subject,
@@ -159,6 +166,9 @@ export function SchoolWorkOverview({
   globalRemarkCategories = [],
   schoolWorkSettings,
   globalAssessmentScales = [],
+  attendanceRecords = [],
+  studentId,
+  examEntries = [],
   onOpen,
   onRemarksChange,
   onStudentChange,
@@ -175,6 +185,9 @@ export function SchoolWorkOverview({
   globalRemarkCategories?: RemarkCategory[];
   schoolWorkSettings?: SchoolWorkSettings;
   globalAssessmentScales?: AssessmentScale[];
+  attendanceRecords?: AttendanceRecord[];
+  studentId?: string;
+  examEntries?: ExamTimetableEntry[];
   onOpen: (subjectClassId: string) => void;
   onRemarksChange?: (remarks: Remark[]) => void;
   onStudentChange?: (student: Student) => void;
@@ -183,12 +196,13 @@ export function SchoolWorkOverview({
   const [activeOverviewMenu, setActiveOverviewMenu] = useState<"subjects" | "contactTeacher" | "admin">("subjects");
   const [contactTeacherClassId, setContactTeacherClassId] = useState<string | null>(() => localStorage.getItem("edulink-contact-class"));
   const [scalePreviewId, setScalePreviewId] = useState<string | null>(null);
+  const [studentTab, setStudentTab] = useState<"classes" | "homework" | "exams">("classes");
 
   const selectContactClass = (id: string | null) => {
     setContactTeacherClassId(id);
     if (id) localStorage.setItem("edulink-contact-class", id);
   };
-  const [contactInfoMode, setContactInfoMode] = useState<"contact" | "remarks" | "gpa">("contact");
+  const [contactInfoMode, setContactInfoMode] = useState<"contact" | "remarks" | "gpa" | "attendance">("contact");
   const [contactStudentId, setContactStudentId] = useState<string | null>(null);
   const [editingGuardianId, setEditingGuardianId] = useState<string | null>(null);
   const [guardianDraft, setGuardianDraft] = useState<Partial<Guardian>>({});
@@ -226,6 +240,30 @@ export function SchoolWorkOverview({
           Admin
         </button>
       ) : null}
+    </nav>
+  ) : role === "student" && studentId ? (
+    <nav className="school-work-overview-menu" aria-label="Student sections">
+      <button
+        className={studentTab === "classes" ? "active-school-work-overview-menu-item" : ""}
+        type="button"
+        onClick={() => setStudentTab("classes")}
+      >
+        My classes
+      </button>
+      <button
+        className={studentTab === "homework" ? "active-school-work-overview-menu-item" : ""}
+        type="button"
+        onClick={() => setStudentTab("homework")}
+      >
+        Homework
+      </button>
+      <button
+        className={studentTab === "exams" ? "active-school-work-overview-menu-item" : ""}
+        type="button"
+        onClick={() => setStudentTab("exams")}
+      >
+        Exams
+      </button>
     </nav>
   ) : null;
 
@@ -421,9 +459,26 @@ export function SchoolWorkOverview({
                 >
                   Average GPA
                 </button>
+                <button
+                  className={contactInfoMode === "attendance" ? "active-contact-mode-tab" : ""}
+                  type="button"
+                  onClick={() => { setContactInfoMode("attendance"); setContactStudentId(null); }}
+                >
+                  Attendance
+                </button>
               </div>
             </div>
-            {classStudents.length === 0 ? (
+            {contactInfoMode === "attendance" ? (
+              classStudents.length === 0 ? (
+                <div className="empty-editor-state"><h3>No students in this class</h3></div>
+              ) : (
+                <AttendanceSummary
+                  classStudents={classStudents}
+                  subjectClasses={subjectClasses.filter((sc) => classStudents.some((s) => sc.studentIds.includes(s.id)))}
+                  attendanceRecords={attendanceRecords}
+                />
+              )
+            ) : classStudents.length === 0 ? (
               <div className="empty-editor-state">
                 <h3>No students in this class</h3>
               </div>
@@ -464,7 +519,7 @@ export function SchoolWorkOverview({
               >
                 <div className="staff-modal-header">
                   <div>
-                    <p className="eyebrow">{contactInfoMode === "contact" ? "Contact info" : contactInfoMode === "remarks" ? "Remarks" : "Average GPA"}</p>
+                    <p className="eyebrow">{contactInfoMode === "contact" ? "Contact info" : contactInfoMode === "remarks" ? "Remarks" : contactInfoMode === "gpa" ? "Average GPA" : "Attendance"}</p>
                     <h2>{contactStudent.firstName} {contactStudent.lastName}</h2>
                   </div>
                   <button className="icon-action" type="button" onClick={() => setContactStudentId(null)} aria-label="Close">✕</button>
@@ -638,6 +693,30 @@ export function SchoolWorkOverview({
             </button>
           ))}
         </nav>
+      </div>
+    );
+  }
+
+  if (role === "student" && studentId && studentTab === "homework") {
+    return (
+      <div className="school-work-overview">
+        {overviewMenu}
+        <HomeworkPage subjectClasses={subjectClasses} subjects={subjects} studentId={studentId} />
+      </div>
+    );
+  }
+
+  if (role === "student" && studentId && studentTab === "exams") {
+    const studentClassId = students.find((s) => s.id === studentId)?.classId;
+    return (
+      <div className="school-work-overview">
+        {overviewMenu}
+        <ExamView
+          entries={examEntries}
+          subjects={subjects}
+          classes={classes}
+          filterClassId={studentClassId}
+        />
       </div>
     );
   }
@@ -1044,8 +1123,11 @@ function StudentGradebookView({
           <article className="student-assessment-grade-card" key={assessment.id}>
             <div className="student-assessment-grade-heading">
               <h3>{assessment.title}</h3>
-              <p>Grade: {getAssessmentGradeDisplay(assessment, scales, studentId)}</p>
-              <time>Date: {formatDate(assessment.date)}</time>
+              <time>{formatDate(assessment.date)}</time>
+            </div>
+            <div className="student-grade-badge-row">
+              <span className="student-grade-label">Grade</span>
+              <span className="student-grade-badge">{getAssessmentGradeDisplay(assessment, scales, studentId)}</span>
             </div>
             <div className="student-assessment-feedback">
               <p><strong>Feedback:</strong> {grade?.feedback || "No feedback yet."}</p>
@@ -2662,11 +2744,14 @@ export function SubjectClassWorkPage({
   activeStudentId,
   initialSimulatedStudentId,
   graderLabel,
+  timetable,
+  attendanceRecords = [],
   onBack,
   onChange,
   onSchoolWorkSettingsChange,
   onRemarkSettingsChange,
   onRemarksChange,
+  onAttendanceChange,
 }: {
   subjectClass: SubjectClass | null;
   subjects: Subject[];
@@ -2679,6 +2764,9 @@ export function SubjectClassWorkPage({
   remarkSettings?: SchoolRemarkSettings;
   globalRemarkCategories?: RemarkCategory[];
   accessLevel?: SchoolWorkAccessLevel;
+  timetable?: SchoolTimetable;
+  attendanceRecords?: AttendanceRecord[];
+  onAttendanceChange?: (records: AttendanceRecord[]) => void;
   activeStudentId?: string;
   initialSimulatedStudentId?: string | null;
   graderLabel?: string;
@@ -2688,7 +2776,7 @@ export function SubjectClassWorkPage({
   onRemarkSettingsChange?: (settings: SchoolRemarkSettings) => void;
   onRemarksChange?: (remarks: Remark[]) => void;
 }) {
-  const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "topics" | "students" | "settings">("resources");
+  const [activeWorkTab, setActiveWorkTab] = useState<"overview" | "resources" | "status" | "topics" | "students" | "attendance" | "settings" | null>(null);
   const [activeSettingsSection, setActiveSettingsSection] = useState<"assessmentScales" | "remarkCategories" | null>(null);
   const [activeStatusSection, setActiveStatusSection] = useState<"grades" | "remarks" | "topics" | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState("root");
@@ -2719,8 +2807,8 @@ export function SubjectClassWorkPage({
 
   useEffect(() => {
     const effectiveLevel = simulatedStudentId ? "student" : accessLevel;
-    if (effectiveLevel === "student" && activeWorkTab !== "resources" && activeWorkTab !== "status") {
-      setActiveWorkTab("resources");
+    if (effectiveLevel === "student" && (activeWorkTab === "students" || activeWorkTab === "attendance" || activeWorkTab === "settings")) {
+      setActiveWorkTab(null);
     }
   }, [accessLevel, activeWorkTab, simulatedStudentId]);
 
@@ -3414,35 +3502,54 @@ export function SubjectClassWorkPage({
           )
         ) : null}
       </div>
-      <nav
-        className="subject-work-nav"
-        aria-label="Subject class sections"
-        style={{ "--subject-nav-color": subject?.color ?? "#1f6857" } as React.CSSProperties}
-      >
-        <span className="subject-work-nav-title">
-          <span className="subject-work-nav-icon">
-            <SchoolIcon size={20} />
-          </span>
-          <strong>{formatSchoolWorkClassTitle(subjectClass.name)}</strong>
-        </span>
-        <span className="subject-work-nav-tabs">
-          <button className={activeWorkTab === "overview" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("overview"); }}>Overview</button>
-          <button className={activeWorkTab === "resources" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("resources"); }}>Resources</button>
-          <button className={activeWorkTab === "topics" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("topics"); }}>Topics</button>
-          <button className={activeWorkTab === "status" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
-            if (!confirmNavigation()) return;
-            setActiveWorkTab("status");
-            setActiveStatusSection(null);
-            setSelectedGradeAssessmentId(null);
-          }}>Status and follow-up</button>
-          {effectiveAccessLevel !== "student" ? <button className={activeWorkTab === "students" ? "active-subject-work-tab" : ""} type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab("students"); }}>Students</button> : null}
-          {canManageSchoolWorkSettings && !isSimulatingStudent ? <button className={activeWorkTab === "settings" ? "active-subject-work-tab" : ""} type="button" onClick={() => {
-            if (!confirmNavigation()) return;
-            setActiveWorkTab("settings");
-            setActiveSettingsSection(null);
-          }}>Settings</button> : null}
-        </span>
-      </nav>
+      <div className="school-work-class-header" style={{ "--subject-nav-color": subject?.color ?? "#1f6857" } as React.CSSProperties}>
+        <span className="subject-work-nav-icon"><SchoolIcon size={20} /></span>
+        <strong>{formatSchoolWorkClassTitle(subjectClass.name)}</strong>
+      </div>
+      {activeWorkTab !== null ? (
+        <button className="school-work-sections-back" type="button" onClick={() => { if (confirmNavigation()) setActiveWorkTab(null); }}>
+          ← Sections
+        </button>
+      ) : null}
+
+      {activeWorkTab === null ? (
+        <div className="editor-section-card-grid school-work-card-grid">
+          <button className="editor-section-card" type="button" onClick={() => setActiveWorkTab("overview")}>
+            <AdminCardTitle icon={faCalendarDays} title="Overview" />
+            <span>Announcements and class information.</span>
+          </button>
+          <button className="editor-section-card" type="button" onClick={() => setActiveWorkTab("resources")}>
+            <AdminCardTitle icon={faFolderOpen} title="Resources" />
+            <span>Course materials, assignments, and assessments.</span>
+          </button>
+          <button className="editor-section-card" type="button" onClick={() => setActiveWorkTab("topics")}>
+            <AdminCardTitle icon={faTags} title="Topics" />
+            <span>Curriculum topics and student progress.</span>
+          </button>
+          <button className="editor-section-card" type="button" onClick={() => { setActiveWorkTab("status"); setActiveStatusSection(null); setSelectedGradeAssessmentId(null); }}>
+            <AdminCardTitle icon={faChartLine} title="Status and follow-up" />
+            <span>Grades, remarks, and topic performance.</span>
+          </button>
+          {effectiveAccessLevel !== "student" ? (
+            <button className="editor-section-card" type="button" onClick={() => setActiveWorkTab("students")}>
+              <AdminCardTitle icon={faUser} title="Students" />
+              <span>Student list and activity overview.</span>
+            </button>
+          ) : null}
+          {effectiveAccessLevel !== "student" ? (
+            <button className="editor-section-card" type="button" onClick={() => setActiveWorkTab("attendance")}>
+              <AdminCardTitle icon={faClipboardCheck} title="Attendance" />
+              <span>Register and view lesson attendance.</span>
+            </button>
+          ) : null}
+          {canManageSchoolWorkSettings && !isSimulatingStudent ? (
+            <button className="editor-section-card" type="button" onClick={() => { setActiveWorkTab("settings"); setActiveSettingsSection(null); }}>
+              <AdminCardTitle icon={faScaleBalanced} title="Settings" />
+              <span>Assessment scales and remark categories.</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {activeWorkTab === "overview" ? (
         <section className="subject-overview-panel">
           {effectiveAccessLevel !== "student" ? (
@@ -3674,6 +3781,19 @@ export function SubjectClassWorkPage({
               </table>
             </div>
           )}
+        </section>
+      ) : null}
+      {activeWorkTab === "attendance" && effectiveAccessLevel !== "student" ? (
+        <section className="subject-overview-panel">
+          <AttendancePage
+            subjectClass={subjectClass}
+            students={subjectClassStudents}
+            timetable={timetable}
+            attendanceRecords={attendanceRecords}
+            graderLabel={graderLabel}
+            accessLevel={effectiveAccessLevel}
+            onAttendanceChange={onAttendanceChange ?? (() => {})}
+          />
         </section>
       ) : null}
       {activeWorkTab === "settings" && canManageSchoolWorkSettings && !activeSettingsSection ? (

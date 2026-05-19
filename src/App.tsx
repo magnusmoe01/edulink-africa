@@ -84,6 +84,7 @@ import { PublishedTimetableView, TimetablePage } from "./components/Timetable";
 import { SchoolHeader, PublicSchoolLoadingPage, useSchoolDocumentBrand, SchoolPage, AboutPageView, AboutSinglePageView, GlobalCategoryPageView, StudentsGuardiansPage, NewsPage, NewsSinglePage, LoadingScreen } from "./components/SchoolWebsite";
 import { SchoolWorkOverview, SubjectClassWorkPage } from "./components/SchoolWork";
 import { SuperAdminPage } from "./components/SuperAdmin";
+import { GuardianPortalPage } from "./components/GuardianPortal";
 import { SchoolEditor, EditorMenu, EditorSection, EditorCategory, editorCategories, getEditorStateFromHash, setEditorHash, getEditorCategoryForSection } from "./components/SchoolEditor";
 import { schoolCache, getCachedSchool } from "./lib/schoolCache";
 import { sampleSchool } from "./data/sampleSchool";
@@ -114,6 +115,7 @@ type Route =
   | { view: "login" }
   | { view: "superadmin" }
   | { view: "schoolWorkPortal"; id: string }
+  | { view: "guardianPortal"; id: string }
   | { view: "about"; id: string }
   | { view: "aboutPage"; schoolId: string; pageSlug: string }
   | { view: "globalCategoryPage"; schoolId: string; categoryId: string }
@@ -138,6 +140,9 @@ function parseRoute(): Route {
   }
   if (segments[0] && segments[1] === "lms") {
     return { view: "schoolWorkPortal", id: segments[0] };
+  }
+  if (segments[0] && segments[1] === "guardian") {
+    return { view: "guardianPortal", id: segments[0] };
   }
   if (segments[0] && segments[1] === "about" && segments[2]) {
     return { view: "aboutPage", schoolId: segments[0], pageSlug: segments[2] };
@@ -178,6 +183,10 @@ function App() {
 
   if (route.view === "schoolWorkPortal") {
     return <SchoolWorkPortalPage schoolId={route.id} />;
+  }
+
+  if (route.view === "guardianPortal") {
+    return <GuardianPortalPage schoolId={route.id} />;
   }
 
   if (route.view === "school") {
@@ -523,6 +532,7 @@ function LoginPage() {
   const [authMethod, setAuthMethod] = useState<"password" | "email-link">("password");
   const [mode, setMode] = useState<"sign-in" | "create-account">("sign-in");
   const [status, setStatus] = useState("Sign in with your EduLink admin account.");
+  const [checkingAuth, setCheckingAuth] = useState(Boolean(hasFirebaseConfig && auth));
   const normalizedEmail = email.trim().toLowerCase();
   const matchingSchool = schools.find((school) => getSchoolAdminEmails(school).includes(normalizedEmail));
   const loginSettings = matchingSchool?.loginSettings ?? { emailPasswordEnabled: true, emailLinkEnabled: false };
@@ -536,6 +546,7 @@ function LoginPage() {
     }
 
     if (isSignInWithEmailLink(auth, window.location.href)) {
+      setCheckingAuth(false);
       const storedEmail = window.localStorage.getItem(EMAIL_LINK_STORAGE_KEY);
       setAuthMethod("email-link");
       if (storedEmail) {
@@ -559,6 +570,8 @@ function LoginPage() {
     return onAuthStateChanged(auth, (user) => {
       if (user) {
         void redirectSignedInUser(user, setStatus);
+      } else {
+        setCheckingAuth(false);
       }
     });
   }, []);
@@ -624,6 +637,10 @@ function LoginPage() {
       setStatus(error instanceof Error ? error.message : "Could not sign in");
     }
   };
+
+  if (checkingAuth) {
+    return <LoadingScreen />;
+  }
 
   return (
     <main className="login-page">
@@ -732,6 +749,18 @@ async function redirectSignedInUser(user: User, setStatus: (status: string) => v
       setStatus("This student account is disabled.");
       return;
     }
+
+    const guardianSchool = schools.find((school) =>
+      school.students.some(
+        (student) =>
+          student.guardianEmail?.toLowerCase() === normalizedEmail ||
+          student.guardians?.some((g) => g.email?.toLowerCase() === normalizedEmail),
+      ),
+    );
+    if (guardianSchool) {
+      navigate(`/${guardianSchool.id}/guardian`);
+      return;
+    }
   }
 
   setStatus("You are signed in, but this email is not registered for this school.");
@@ -824,6 +853,11 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
     setSchool(nextSchool);
     await saveSchool(nextSchool);
   };
+  const saveNextAttendanceRecords = async (records: import("./types").AttendanceRecord[]) => {
+    const nextSchool = { ...school, attendanceRecords: records };
+    setSchool(nextSchool);
+    await saveSchool(nextSchool);
+  };
   const saveNextChatMessages = async (nextMessages: SchoolChatMessage[]) => {
     const nextSchool = {
       ...school,
@@ -870,10 +904,13 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
         activeStudentId={identity.role === "student" ? identity.studentId : undefined}
         initialSimulatedStudentId={simulateStudentIdParam}
         graderLabel={identity.label}
+        timetable={school.timetable}
+        attendanceRecords={school.attendanceRecords ?? []}
         onBack={backToSubjectClasses}
         onChange={saveNextSubjectClass}
         onSchoolWorkSettingsChange={saveNextSchoolWorkSettings}
         onRemarksChange={(nextRemarks) => void saveNextRemarks(nextRemarks)}
+        onAttendanceChange={(records) => void saveNextAttendanceRecords(records)}
       />
     </div>
   ) : (
@@ -889,6 +926,9 @@ function SchoolWorkPortalPage({ schoolId }: { schoolId: string }) {
       globalRemarkCategories={globalSchoolWork.remarkCategories ?? []}
       schoolWorkSettings={school.schoolWorkSettings}
       globalAssessmentScales={globalSchoolWork.assessmentScales ?? []}
+      attendanceRecords={school.attendanceRecords ?? []}
+      studentId={identity.role === "student" ? identity.studentId : undefined}
+      examEntries={school.examTimetable?.entries ?? []}
       onOpen={setActiveSubjectClassId}
       onRemarksChange={(nextRemarks) => void saveNextRemarks(nextRemarks)}
       onStudentChange={(student) => void saveNextStudent(student)}
@@ -1154,6 +1194,7 @@ function AdminPage({ schoolId }: { schoolId: string }) {
           <span>EduLink Africa</span>
         </button>
         <div className="admin-actions">
+          {saveStatus ? <span className="admin-save-status">{saveStatus}</span> : null}
           <button className="secondary-action admin-chat-button" onClick={() => setChatOpen(true)} aria-label="Open messages">
             <MessageCircle size={18} />
           </button>
@@ -1187,7 +1228,6 @@ function AdminPage({ schoolId }: { schoolId: string }) {
               ) : null}
             </div>
           ) : null}
-          {saveStatus ? <span className="admin-save-status">{saveStatus}</span> : null}
         </div>
       </header>
       {chatOpen ? (

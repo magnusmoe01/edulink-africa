@@ -311,7 +311,7 @@ export function TimetablePage({ school, onChange }: { school: School; onChange: 
               <p className="editor-helper-text">No breaks configured.</p>
             ) : config.breaks.map((brk) => (
               <div key={brk.id} className="timetable-break-row">
-                <label className="field-label" style={{ flex: 2 }}>
+                <label className="field-label">
                   Name
                   <input value={brk.name} onChange={(e) => updateBreak(brk.id, { name: e.target.value })} />
                 </label>

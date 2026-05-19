@@ -9,6 +9,8 @@ import {
   faCalendarDays,
   faChalkboardUser,
   faCircleInfo,
+  faClipboardCheck,
+  faClipboardList,
   faFolderOpen,
   faGaugeHigh,
   faGlobe,
@@ -60,6 +62,8 @@ import { SchoolWorkOverview, SubjectClassWorkPage } from "./SchoolWork";
 import { TimetablePage } from "./Timetable";
 import { slugifySchoolName } from "../lib/schools";
 import { SchoolBillingPanel } from "./SuperAdmin";
+import { SubstitutionsPage } from "./SubstitutionsPage";
+import { ExamTimetableAdminPage } from "./ExamTimetablePage";
 import type {
   AboutCategory,
   AboutPage,
@@ -80,7 +84,7 @@ import type {
   SubjectClass,
 } from "../types";
 
-export type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "loginSettings" | "billing" | "timetable";
+export type EditorSection = "profile" | "contact" | "about" | "news" | "calendar" | "staff" | "access" | "grades" | "classes" | "subjectClasses" | "subjects" | "students" | "schoolWork" | "loginSettings" | "billing" | "timetable" | "substitutions" | "examTimetable";
 export type EditorCategory = "website" | "people" | "schoolWork" | "settings" | "administrative";
 
 const subjectColorOptions = [
@@ -108,6 +112,8 @@ export const editorSections: Array<{ id: EditorSection; label: string }> = [
   { id: "loginSettings", label: "Login format" },
   { id: "billing", label: "Billing" },
   { id: "timetable", label: "Timetable" },
+  { id: "substitutions", label: "Absence & Substitutions" },
+  { id: "examTimetable", label: "Exam Timetable" },
 ];
 
 export const editorCategories: Array<{
@@ -143,7 +149,7 @@ export const editorCategories: Array<{
     id: "administrative",
     label: "Administrative",
     description: "Timetable scheduling and school operations.",
-    sections: ["timetable"],
+    sections: ["timetable", "substitutions", "examTimetable"],
   },
   {
     id: "settings",
@@ -882,6 +888,24 @@ export function SchoolEditor({
             <TimetablePage
               school={school}
               onChange={(timetable) => setField("timetable", timetable)}
+            />
+          </EditorPanel>
+        ) : null}
+
+        {activeSection === "substitutions" ? (
+          <EditorPanel title="Absence & Substitutions">
+            <SubstitutionsPage
+              school={school}
+              onSchoolChange={onChange}
+            />
+          </EditorPanel>
+        ) : null}
+
+        {activeSection === "examTimetable" ? (
+          <EditorPanel title="Exam Timetable">
+            <ExamTimetableAdminPage
+              school={school}
+              onSchoolChange={(next) => { onChange(next); void onAutoSave?.(next); }}
             />
           </EditorPanel>
         ) : null}
@@ -1697,6 +1721,8 @@ function getEditorSectionIcon(section: EditorSection): IconDefinition {
     loginSettings: faGaugeHigh,
     billing: faScaleBalanced,
     timetable: faCalendarDays,
+    substitutions: faClipboardCheck,
+    examTimetable: faClipboardList,
   };
   return icons[section];
 }
@@ -1752,6 +1778,8 @@ function getEditorSectionDescription(section: EditorSection) {
     students: "Student records, guardians, and class assignments.",
     billing: "Subscription plan, invoices, and payment history.",
     timetable: "Build and manage the school timetable.",
+    substitutions: "Register teacher absences and assign cover for their lessons.",
+    examTimetable: "Schedule exams by subject, class, date, time, and venue.",
   };
   return descriptions[section];
 }

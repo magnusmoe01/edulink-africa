@@ -2249,11 +2249,11 @@ textarea {
   position: sticky;
   top: 77px;
   display: grid;
-  align-content: start;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 18px;
   max-height: calc(100vh - 77px);
   min-height: calc(100vh - 78px);
-  overflow-y: auto;
+  overflow: hidden;
   padding: 24px;
   color: #fff;
   background: #18322e;
@@ -2272,8 +2272,11 @@ textarea {
 
 .superadmin-nav {
   display: grid;
+  align-content: start;
   gap: 8px;
   padding-top: 4px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .superadmin-nav button {
@@ -2831,6 +2834,14 @@ textarea {
   cursor: pointer;
 }
 
+.subscription-date-input {
+  padding: 5px 8px;
+  border: 1px solid #c5d0cb;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #1a2e28;
+}
+
 .subscription-price-input-wrap {
   display: flex;
   align-items: center;
@@ -2889,25 +2900,6 @@ textarea {
 }
 
 /* ── Payments panel ─────────────────────────────────────────── */
-.payments-generate-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  font-size: 0.875rem;
-}
-
-.payments-generate-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .payment-status-filter {
   display: flex;
   gap: 6px;
@@ -6399,14 +6391,13 @@ strong.admin-card-title span {
 }
 
 .student-assessment-grade-heading {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 160px) minmax(150px, auto);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 16px;
-  align-items: center;
 }
 
 .student-assessment-grade-heading h3,
-.student-assessment-grade-heading p,
 .student-assessment-grade-heading time,
 .student-assessment-feedback p {
   margin: 0;
@@ -6417,13 +6408,28 @@ strong.admin-card-title span {
   overflow-wrap: anywhere;
 }
 
-.student-assessment-grade-heading p {
-  justify-self: center;
-  text-align: center;
+.student-assessment-grade-heading time {
+  flex-shrink: 0;
+  color: #5d7a6d;
+  font-size: 0.88rem;
 }
 
-.student-assessment-grade-heading time {
-  justify-self: end;
+.student-grade-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.student-grade-badge {
+  display: inline-block;
+  border: 1.5px solid #1f6857;
+  border-radius: 6px;
+  padding: 3px 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1a4a39;
+  background: #f4faf7;
+  letter-spacing: 0.01em;
 }
 
 .student-assessment-feedback {
@@ -7263,16 +7269,26 @@ strong.admin-card-title span {
   width: 100%;
 }
 
-.timetable-number-input { width: 80px; }
 
 .timetable-break-row {
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  align-items: end;
   gap: 10px;
-  padding: 10px;
+  padding: 14px;
   border: 1px solid #e8eeeb;
   border-radius: 8px;
   margin-top: 8px;
+}
+
+.timetable-break-row .field-label {
+  width: 100%;
+}
+
+.timetable-break-row .field-label input,
+.timetable-break-row .field-label select {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .timetable-preview-list {
@@ -7752,3 +7768,1225 @@ strong.admin-card-title span {
 }
 
 .pub-timetable-break-cell { background: #f5f8f7; }
+
+/* ── Substitutions page ───────────────────────────────────── */
+
+.substitutions-page {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  max-width: 860px;
+}
+
+.substitutions-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.substitutions-date-picker {
+  flex-shrink: 0;
+}
+
+.substitutions-day-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-weight: 600;
+  font-size: 1rem;
+  color: #1a4a39;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e0ebe6;
+}
+
+.substitutions-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.substitutions-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fffbea;
+  border: 1px solid #e8d97a;
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #6b5c00;
+  font-size: 0.9rem;
+}
+
+.substitutions-notice svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #c8a800;
+}
+
+.substitutions-notice p {
+  margin: 0;
+}
+
+.substitutions-add-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  background: #f4faf7;
+  border: 1px solid #c6dbd2;
+  border-radius: 10px;
+  padding: 18px;
+}
+
+.substitutions-add-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+}
+
+.substitutions-empty {
+  color: #7a9089;
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.substitutions-list {
+  display: grid;
+  gap: 16px;
+}
+
+.substitution-card {
+  border: 1px solid #d4e3dc;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.substitution-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: #f4faf7;
+  border-bottom: 1px solid #dceae3;
+}
+
+.substitution-teacher-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.substitution-teacher-info svg {
+  color: #1f6857;
+}
+
+.substitution-teacher-info strong {
+  font-size: 1rem;
+  color: #1a4a39;
+}
+
+.substitution-reason-badge {
+  display: inline-block;
+  background: #e6f2ec;
+  color: #1f6857;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.substitution-no-lessons {
+  margin: 0;
+  padding: 14px 18px;
+  color: #7a9089;
+  font-size: 0.9rem;
+}
+
+.substitution-lessons-table {
+  width: 100%;
+  margin: 0;
+}
+
+.substitution-time-cell {
+  white-space: nowrap;
+  color: #5d7a6d;
+  font-size: 0.88rem;
+}
+
+.substitution-assign-cell {
+  min-width: 180px;
+}
+
+.substitution-substitute-select {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid #c5d0cb;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  background: #fff;
+  color: #1a4a39;
+}
+
+.substitution-substitute-select:focus {
+  outline: 2px solid #1f6857;
+  outline-offset: 1px;
+}
+
+.substitution-range-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #eef3f1;
+  color: #5d7a6d;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+/* ── Absence modal ─────────────────────────────────────────── */
+
+.absence-modal-type-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid #c6dbd2;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.absence-modal-type-toggle button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 14px;
+  background: #fff;
+  border: none;
+  border-right: 1px solid #c6dbd2;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #5d7a6d;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.absence-modal-type-toggle button:last-child {
+  border-right: none;
+}
+
+.absence-modal-type-toggle button:hover {
+  background: #f0f7f4;
+}
+
+.absence-modal-type-toggle button.active-absence-type {
+  background: #1f6857;
+  color: #fff;
+}
+
+.absence-modal-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.absence-slot-picker {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #ddeae4;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fcfa;
+}
+
+.absence-slot-picker-label {
+  margin: 0 0 4px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5d7a6d;
+}
+
+.absence-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.absence-slot-row:hover {
+  background: #ecf5f0;
+}
+
+.absence-slot-row input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #1f6857;
+  cursor: pointer;
+}
+
+.absence-slot-time {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1a4a39;
+  white-space: nowrap;
+  min-width: 100px;
+}
+
+.absence-slot-detail {
+  font-size: 0.88rem;
+  color: #33403b;
+}
+
+/* ── Attendance ───────────────────────────────────────────── */
+
+.attendance-page {
+  display: grid;
+  gap: 18px;
+  padding: 4px 0;
+}
+
+.attendance-date-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.attendance-date-label {
+  min-width: 180px;
+}
+
+.attendance-notice {
+  color: #7a9089;
+  font-size: 0.92rem;
+  margin: 0;
+  padding: 16px 0;
+}
+
+.attendance-slot-list {
+  display: grid;
+  gap: 8px;
+}
+
+.attendance-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 1px solid #dce8e3;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  width: 100%;
+}
+
+.attendance-slot-row:hover {
+  border-color: #1f6857;
+  background: #f4faf7;
+}
+
+.attendance-slot-taken {
+  border-color: #b8d9cc;
+  background: #f8fcfa;
+}
+
+.attendance-slot-time {
+  font-weight: 600;
+  color: #1a4a39;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  min-width: 110px;
+}
+
+.attendance-slot-info {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.attendance-not-taken {
+  color: #a0b4ad;
+  font-size: 0.88rem;
+}
+
+.attendance-slot-cta {
+  font-size: 0.82rem;
+  color: #1f6857;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.att-chip {
+  display: inline-block;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.att-chip-present { background: #ddf0e8; color: #1a5c3a; }
+.att-chip-absent  { background: #fde8e8; color: #a03030; }
+.att-chip-late    { background: #fef3d8; color: #7a5200; }
+.att-chip-excused { background: #dce8fb; color: #1a3a80; }
+
+/* Register view */
+
+.attendance-register {
+  display: grid;
+  gap: 16px;
+}
+
+.attendance-register-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.attendance-register-heading .eyebrow {
+  margin: 0 0 4px;
+}
+
+.attendance-register-heading h3 {
+  margin: 0;
+}
+
+.attendance-register-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.attendance-mark-all-btn {
+  justify-self: start;
+}
+
+.attendance-student-list {
+  display: grid;
+  gap: 6px;
+}
+
+.attendance-student-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #e8eeeb;
+  background: #fff;
+  transition: border-color 0.1s;
+}
+
+.att-row-present { border-color: #b8d9cc; background: #f8fcfa; }
+.att-row-absent  { border-color: #f5c6c6; background: #fdf8f8; }
+.att-row-late    { border-color: #f0dba8; background: #fdfaf3; }
+.att-row-excused { border-color: #b8cff5; background: #f8fafd; }
+
+.attendance-student-name {
+  font-weight: 500;
+  font-size: 0.92rem;
+  color: #1a4a39;
+}
+
+.attendance-status-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.attendance-status-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  border: 1.5px solid #d0ddd8;
+  background: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #7a9089;
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s, color 0.1s;
+}
+
+.attendance-status-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.att-btn-present.att-btn-active { background: #1f6857; border-color: #1f6857; color: #fff; }
+.att-btn-absent.att-btn-active  { background: #c65353; border-color: #c65353; color: #fff; }
+.att-btn-late.att-btn-active    { background: #c5872f; border-color: #c5872f; color: #fff; }
+.att-btn-excused.att-btn-active { background: #2f6fbb; border-color: #2f6fbb; color: #fff; }
+
+.att-btn-present:hover:not(:disabled):not(.att-btn-active) { border-color: #1f6857; color: #1f6857; }
+.att-btn-absent:hover:not(:disabled):not(.att-btn-active)  { border-color: #c65353; color: #c65353; }
+.att-btn-late:hover:not(:disabled):not(.att-btn-active)    { border-color: #c5872f; color: #c5872f; }
+.att-btn-excused:hover:not(:disabled):not(.att-btn-active) { border-color: #2f6fbb; color: #2f6fbb; }
+
+.attendance-save-row {
+  display: flex;
+  gap: 10px;
+}
+
+.attendance-grader-label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #a0b4ad;
+}
+
+/* Attendance summary (contact teacher) */
+
+.attendance-summary-table-wrap {
+  overflow-x: auto;
+}
+
+.attendance-summary-table {
+  width: 100%;
+}
+
+.att-count {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.att-present-count { color: #1a5c3a; }
+.att-absent-count  { color: #a03030; }
+.att-late-count    { color: #7a5200; }
+.att-excused-count { color: #1a3a80; }
+
+.att-rate-badge {
+  display: inline-block;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.att-rate-high { background: #ddf0e8; color: #1a5c3a; }
+.att-rate-mid  { background: #fef3d8; color: #7a5200; }
+.att-rate-low  { background: #fde8e8; color: #a03030; }
+
+/* ── Subject class card-picker layout ────────────────────── */
+
+.school-work-class-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border: 1px solid #d8e0dc;
+  border-radius: 8px;
+  background: #f9fbfa;
+  color: var(--subject-nav-color, #1f6857);
+}
+
+.school-work-class-header strong {
+  flex: 1;
+  font-size: 1rem;
+  color: #1a4a39;
+}
+
+.school-work-sections-back {
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #5d7a6d;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+  display: block;
+  text-align: left;
+}
+
+.school-work-sections-back:hover {
+  background: #e6f0eb;
+  color: #1f6857;
+}
+
+.school-work-card-grid {
+  margin-top: 4px;
+}
+
+/* ── Parent portal ────────────────────────────────────────────── */
+
+.guardian-portal {
+  min-height: 100vh;
+  background: #f8faf9;
+}
+
+.guardian-portal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e5ede9;
+  gap: 16px;
+}
+
+.guardian-portal-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.guardian-email-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #5d7a6d;
+}
+
+.guardian-portal-body {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.guardian-portal-heading {
+  margin-bottom: 28px;
+}
+
+.guardian-portal-heading h1 {
+  margin: 4px 0 0;
+  font-size: 1.6rem;
+}
+
+.guardian-child-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.guardian-child-tab {
+  border: 1.5px solid #d0e0d8;
+  background: #fff;
+  border-radius: 20px;
+  padding: 6px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #3a5c4f;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.guardian-child-tab:hover {
+  background: #eef6f2;
+}
+
+.guardian-child-tab-active {
+  background: #1f6857;
+  border-color: #1f6857;
+  color: #fff;
+}
+
+.guardian-child-header {
+  margin-bottom: 20px;
+}
+
+.guardian-child-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 2px;
+  color: #1a2e27;
+}
+
+.guardian-child-class {
+  font-size: 0.9rem;
+  color: #5d7a6d;
+  margin: 0;
+}
+
+.guardian-tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #e5ede9;
+  margin-bottom: 24px;
+}
+
+.guardian-tab {
+  border: none;
+  background: none;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #5d7a6d;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.guardian-tab:hover {
+  color: #1f6857;
+}
+
+.guardian-tab-active {
+  color: #1f6857;
+  border-bottom-color: #1f6857;
+}
+
+.guardian-empty {
+  color: #5d7a6d;
+  font-size: 0.95rem;
+  padding: 16px 0;
+}
+
+.guardian-grades-list {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.guardian-subject-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guardian-subject-heading {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--subject-color, #1f6857);
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--subject-color, #1f6857);
+}
+
+.guardian-assessment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guardian-assessment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #e5ede9;
+  border-radius: 8px;
+}
+
+.guardian-assessment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guardian-assessment-info strong {
+  font-size: 0.9rem;
+  color: #1a2e27;
+}
+
+.guardian-assessment-date {
+  font-size: 0.8rem;
+  color: #5d7a6d;
+}
+
+.guardian-assessment-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.guardian-assessment-feedback {
+  font-size: 0.8rem;
+  color: #5d7a6d;
+  max-width: 240px;
+  text-align: right;
+}
+
+.guardian-announcements {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guardian-announcement-card {
+  background: #fff;
+  border: 1px solid #e5ede9;
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.guardian-announcement-card h3 {
+  margin: 6px 0 8px;
+  font-size: 0.95rem;
+  color: #1a2e27;
+}
+
+.guardian-announcement-card p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #3a5c4f;
+  line-height: 1.5;
+}
+
+.guardian-announcement-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.guardian-announcement-subject {
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: #eef6f2;
+  color: #1f6857;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.guardian-announcement-date {
+  font-size: 0.78rem;
+  color: #5d7a6d;
+}
+
+/* ── Homework page ────────────────────────────────────────────── */
+
+.homework-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.homework-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.homework-group-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.homework-group-overdue .homework-group-label { color: #b91c1c; }
+.homework-group-soon .homework-group-label { color: #92400e; }
+.homework-group-later .homework-group-label { color: #1f6857; }
+.homework-group-none .homework-group-label { color: #5d7a6d; }
+.homework-group-submitted .homework-group-label { color: #9ca3af; }
+
+.homework-group-count {
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: currentColor;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 7px;
+  opacity: 0.85;
+}
+
+.homework-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.homework-item {
+  display: flex;
+  background: #fff;
+  border: 1px solid #e5ede9;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.12s;
+}
+
+.homework-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+
+.homework-item-overdue {
+  border-color: #fca5a5;
+  background: #fff8f8;
+}
+
+.homework-item-submitted {
+  opacity: 0.55;
+}
+
+.homework-item-color-bar {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--hw-subject-color, #1f6857);
+}
+
+.homework-item-submitted .homework-item-color-bar {
+  background: #9ca3af;
+}
+
+.homework-item-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.homework-item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.homework-subject-chip {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--hw-subject-color, #1f6857);
+  background: color-mix(in srgb, var(--hw-subject-color, #1f6857) 10%, transparent);
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+
+.homework-type-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 2px 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.homework-type-assignment { background: #eff6ff; color: #1d4ed8; }
+.homework-type-assessment { background: #f0fdf4; color: #15803d; }
+.homework-type-test       { background: #faf5ff; color: #7e22ce; }
+
+.homework-item-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1a2e27;
+}
+
+.homework-item-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #5d7a6d;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.homework-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.homework-due-label,
+.homework-submitted-label,
+.homework-no-due {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.homework-due-label { color: #5d7a6d; }
+.homework-due-overdue { color: #b91c1c; }
+.homework-submitted-label { color: #15803d; }
+.homework-no-due { color: #9ca3af; }
+
+/* ── Exam timetable ───────────────────────────────────────────── */
+
+.exam-admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.exam-modal-time-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.exam-class-checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.exam-class-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  background: #f3f8f5;
+  border: 1px solid #d0e0d8;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.exam-class-checkbox-row input[type="checkbox"] {
+  accent-color: #1f6857;
+}
+
+.exam-date-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.exam-date-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exam-date-heading {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #3a5c4f;
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1.5px solid #e5ede9;
+}
+
+.exam-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.exam-entry-card {
+  display: flex;
+  background: #fff;
+  border: 1px solid #e5ede9;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.exam-entry-color-bar {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--exam-subject-color, #1f6857);
+}
+
+.exam-entry-body {
+  padding: 10px 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.exam-entry-subject {
+  margin: 0 0 3px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #1a2e27;
+}
+
+.exam-entry-meta {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+}
+
+.exam-entry-time {
+  font-weight: 600;
+  color: #3a5c4f;
+}
+
+.exam-entry-venue {
+  color: #5d7a6d;
+}
+
+.exam-entry-classes {
+  margin: 3px 0 0;
+  font-size: 0.8rem;
+  color: #5d7a6d;
+}
+
+.exam-entry-notes {
+  margin: 3px 0 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.exam-entry-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border-left: 1px solid #e5ede9;
+}
+
+/* ── Exam view (students / parents) ──────────────────────────── */
+
+.exam-view {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.exam-view-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exam-view-group-past {
+  opacity: 0.6;
+}
+
+.exam-view-group-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5d7a6d;
+  margin: 0 0 4px;
+}
+
+.exam-view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exam-view-card {
+  display: flex;
+  background: #fff;
+  border: 1px solid #e5ede9;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+
+.exam-view-card-today {
+  border-color: #1f6857;
+  box-shadow: 0 0 0 2px rgba(31, 104, 87, 0.12);
+}
+
+.exam-view-color-bar {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--exam-subject-color, #1f6857);
+}
+
+.exam-view-card-date-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 14px;
+  min-width: 56px;
+  border-right: 1px solid #e5ede9;
+  text-align: center;
+}
+
+.exam-view-card-day {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #5d7a6d;
+}
+
+.exam-view-card-daynum {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #1a2e27;
+  line-height: 1;
+}
+
+.exam-view-card-month {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #5d7a6d;
+  text-transform: uppercase;
+}
+
+.exam-view-card-body {
+  padding: 12px 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.exam-view-subject {
+  margin: 0 0 4px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #1a2e27;
+}
+
+.exam-view-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.exam-view-time {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #3a5c4f;
+}
+
+.exam-view-venue {
+  font-size: 0.82rem;
+  color: #5d7a6d;
+}
+
+.exam-view-classes {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: #5d7a6d;
+}
+
+.exam-view-notes {
+  margin: 3px 0 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.exam-view-today-badge {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #1f6857;
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

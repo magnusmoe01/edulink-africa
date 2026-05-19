@@ -28,8 +28,6 @@ import {
   formatBillingPeriod,
   formatDateTime,
   formatKES,
-  generatePayment,
-  getCurrentPeriod,
   getPaidAmount,
   parsePercentageInput,
 } from "../lib/utils";
@@ -929,6 +927,7 @@ function SubscriptionsPanel({
               <th>Students</th>
               <th>Plan</th>
               <th>Interval</th>
+              <th>Start date</th>
               <th>Price</th>
               <th>Period total</th>
               <th></th>
@@ -983,6 +982,17 @@ function SubscriptionsPanel({
                         <option value="monthly">Monthly</option>
                         <option value="yearly">Yearly</option>
                       </select>
+                    ) : <span className="subscription-na">—</span>}
+                  </td>
+                  <td>
+                    {isPaid ? (
+                      <input
+                        className="subscription-date-input"
+                        type="date"
+                        value={sub.startDate ?? ""}
+                        disabled={isSaving}
+                        onChange={(e) => void save(school.id, { ...sub, startDate: e.target.value || undefined })}
+                      />
                     ) : <span className="subscription-na">—</span>}
                   </td>
                   <td>
@@ -1112,7 +1122,6 @@ function PaymentsPanel({
   const [newRecordAmount, setNewRecordAmount] = useState<Record<string, string>>({});
   const [newRecordNote, setNewRecordNote] = useState<Record<string, string>>({});
   const [newComment, setNewComment] = useState<Record<string, string>>({});
-  const [generating, setGenerating] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
 
   const allPayments = schools
@@ -1120,8 +1129,6 @@ function PaymentsPanel({
     .sort((a, b) => b.payment.period.localeCompare(a.payment.period));
 
   const filtered = filterStatus === "all" ? allPayments : allPayments.filter(({ payment }) => payment.status === filterStatus);
-
-  const paidSchools = schools.filter((s) => s.subscription && s.subscription.plan !== "free");
 
   const doSave = async (schoolId: string, payment: SchoolPayment) => {
     const key = `${schoolId}:${payment.id}`;
@@ -1133,42 +1140,10 @@ function PaymentsPanel({
     }
   };
 
-  const handleGenerate = async (school: School) => {
-    const interval = school.subscription?.interval ?? "monthly";
-    const period = getCurrentPeriod(interval);
-    const exists = (school.payments ?? []).some((p) => p.period === period);
-    if (exists) { alert(`Payment for ${formatBillingPeriod(period)} already exists.`); return; }
-    const payment = generatePayment(school, period);
-    if (!payment) return;
-    setGenerating((prev) => ({ ...prev, [school.id]: true }));
-    try {
-      await onUpdatePayment(school.id, payment);
-    } finally {
-      setGenerating((prev) => { const next = { ...prev }; delete next[school.id]; return next; });
-    }
-  };
-
   const statusLabel = (s: SchoolPayment["status"]) => s === "upcoming" ? "Upcoming" : s === "outstanding" ? "Outstanding" : s === "partial" ? "Partial" : "Paid";
 
   return (
     <EditorPanel title="Payments">
-      <div className="payments-generate-row">
-        <strong>Generate current period invoice:</strong>
-        <div className="payments-generate-buttons">
-          {paidSchools.map((school) => (
-            <button
-              key={school.id}
-              className="secondary-action"
-              type="button"
-              disabled={generating[school.id]}
-              onClick={() => void handleGenerate(school)}
-            >
-              {school.name}
-            </button>
-          ))}
-          {paidSchools.length === 0 ? <span className="subscription-na">No paid schools</span> : null}
-        </div>
-      </div>
       <div className="payment-status-filter">
         {(["all", "upcoming", "outstanding", "partial", "paid"] as const).map((s) => (
           <button
@@ -1187,7 +1162,7 @@ function PaymentsPanel({
       {filtered.length === 0 ? (
         <div className="empty-editor-state">
           <h3>No payments</h3>
-          <p>Generate invoices for paid schools using the buttons above.</p>
+          <p>Invoices are generated automatically based on school subscriptions.</p>
         </div>
       ) : (
         <div className="payment-list">

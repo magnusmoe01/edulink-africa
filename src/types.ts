@@ -292,6 +292,7 @@ export type SchoolSubscription = {
   interval?: "monthly" | "yearly";
   fixedPrice?: number;
   pricePerStudent?: number;
+  startDate?: string;
 };
 
 export type PaymentLineItem = {
@@ -371,6 +372,21 @@ export type TimetableVersion = {
   entries: TimetableEntry[];
 };
 
+export type ExamTimetableEntry = {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime?: string;
+  subjectId: string;
+  classIds: string[];
+  venue?: string;
+  notes?: string;
+};
+
+export type ExamTimetable = {
+  entries: ExamTimetableEntry[];
+};
+
 export type SchoolTimetable = {
   config: TimetableConfig;
   defaults?: TimetableDefault[];
@@ -417,9 +433,50 @@ export type School = {
   supportTickets?: SupportTicket[];
   payments?: SchoolPayment[];
   timetable?: SchoolTimetable;
+  examTimetable?: ExamTimetable;
+  absences?: TeacherAbsence[];
+  attendanceRecords?: AttendanceRecord[];
   aboutCategories: AboutCategory[];
   aboutPages: AboutPage[];
   updatedAt?: string;
+};
+
+export type StudentAttendanceStatus = "present" | "absent" | "late" | "excused";
+
+export type StudentAttendance = {
+  studentId: string;
+  status: StudentAttendanceStatus;
+  note?: string;
+};
+
+export type AttendanceRecord = {
+  id: string;
+  date: string;
+  subjectClassId: string;
+  slot: number;
+  records: StudentAttendance[];
+  takenBy?: string;
+  takenAt?: string;
+};
+
+export type LessonSubstitution = {
+  date?: string;
+  subjectId: string;
+  classId: string;
+  slot: number;
+  substituteTeacherName?: string;
+  cancelled?: boolean;
+  note?: string;
+};
+
+export type TeacherAbsence = {
+  id: string;
+  absenceType: "partial" | "longterm";
+  startDate: string;
+  endDate: string;
+  teacherName: string;
+  reason?: string;
+  lessonSubstitutions: LessonSubstitution[];
 };
 
 export type SupportTicket = {
